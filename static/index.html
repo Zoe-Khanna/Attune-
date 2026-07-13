@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Attune — learn by playing</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
+  :root{
+    --paper:#F6F3EC; --ink:#22201B; --muted:#6E6A60; --line:#E3DED2;
+    --teal:#1E7A6E; --teal-dk:#155B52; --teal-soft:#DCEBE7;
+    --clay:#C97A54; --good:#2E7D5B; --bad:#C4553B; --gold:#B87914;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif;display:flex;justify-content:center;}
+  .wrap{width:100%;max-width:900px;padding:24px 18px 60px;}
+  h1{font-family:'Fraunces',serif;font-weight:600;font-size:32px;margin:0 0 4px;}
+  .muted{color:var(--muted)}
+  .card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:22px;margin-top:16px;}
+  .btn{border:none;cursor:pointer;font-family:inherit;font-weight:600;font-size:15px;
+    padding:13px 20px;border-radius:12px;background:var(--teal);color:#fff;}
+  .btn:hover{background:var(--teal-dk)}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.sec{background:var(--teal-soft);color:var(--teal-dk)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  textarea{width:100%;min-height:110px;padding:12px;border:1px solid var(--line);
+    border-radius:12px;font-family:inherit;font-size:15px;resize:vertical}
+  .drop{border:2px dashed var(--teal);background:var(--teal-soft);border-radius:14px;
+    padding:22px;text-align:center;cursor:pointer}
+  .drop:hover{background:#CFE6E0}
+  .drop.drag{background:#BFE0D8}
+  .hide{display:none !important}
+  .status{font-size:14px;margin-top:10px;min-height:20px}
+  .status.err{color:var(--bad)}
+
+  /* ---- game ---- */
+  #stage{position:relative;width:100%;height:340px;border-radius:16px;overflow:hidden;
+    background:linear-gradient(#CFE6E0,#EAF3F0 60%,#DCEBE7);border:1px solid var(--line);}
+  canvas{display:block;width:100%;height:100%}
+  .hud{position:absolute;top:10px;left:12px;right:12px;display:flex;justify-content:space-between;
+    font-weight:700;font-size:14px;pointer-events:none}
+  .hud .pill{background:#fff;border:1px solid var(--line);border-radius:99px;padding:5px 12px}
+  .hud .score{color:var(--gold)}
+
+  /* question overlay: game FREEZES behind this */
+  .qbox{position:absolute;inset:0;background:rgba(34,32,27,.72);display:flex;
+    align-items:center;justify-content:center;padding:18px;}
+  .qcard{background:#fff;border-radius:16px;padding:22px;max-width:520px;width:100%;
+    box-shadow:0 10px 40px rgba(0,0,0,.25)}
+  .qcard .qtop{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--teal);
+    font-weight:700}
+  .qcard .qtext{font-family:'Fraunces',serif;font-size:21px;margin:8px 0 16px;line-height:1.3}
+  .opts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  @media(max-width:560px){.opts{grid-template-columns:1fr}}
+  .opt{padding:14px;border:1px solid var(--line);border-radius:12px;background:#fff;
+    font-size:16px;font-weight:600;cursor:pointer;font-family:inherit;text-align:left}
+  .opt:hover{border-color:var(--teal);background:var(--teal-soft)}
+  .opt.right{border-color:var(--good);background:#E4F1EA}
+  .opt.wrong{border-color:var(--bad);background:#F6E3DD}
+  .feedback{margin-top:12px;font-size:14px;font-weight:600;min-height:20px}
+  .feedback.good{color:var(--good)} .feedback.bad{color:var(--bad)}
+
+  .banner{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;background:rgba(34,32,27,.8);color:#fff;text-align:center;padding:20px}
+  .banner h2{font-family:'Fraunces',serif;font-size:30px;margin:0 0 8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Attune</h1>
+  <p class="muted">Add your textbook page. The AI reads it, works out the concepts, and
+  builds <b>new</b> questions. Then run the gauntlet — each gate asks one.</p>
+
+  <!-- ---------- setup ---------- -->
+  <div class="card" id="setup">
+    <h3 style="margin:0 0 10px">1 · Give it something to learn from</h3>
+
+    <div class="drop" id="drop">
+      <div style="font-size:34px">📷</div>
+      <div style="font-weight:600;color:var(--teal-dk);margin-top:8px">Tap to add a photo of the page</div>
+      <div class="muted" style="font-size:13px">or drag an image here</div>
+    </div>
+    <input id="file" type="file" accept="image/*" class="hide">
+    <img id="preview" class="hide" style="width:100%;border-radius:12px;margin-top:12px;border:1px solid var(--line)">
+
+    <p class="muted" style="margin:14px 0 6px;font-size:14px">…or paste the text instead:</p>
+    <textarea id="text" placeholder="Paste textbook text here…"></textarea>
+
+    <div class="row" style="margin-top:14px">
+      <button class="btn" id="go">Build my game</button>
+      <button class="btn sec hide" id="reset">Clear photo</button>
+    </div>
+    <div class="status muted" id="status"></div>
+  </div>
+
+  <!-- ---------- game ---------- -->
+  <div class="card hide" id="gamecard">
+    <div class="row" style="justify-content:space-between;margin-bottom:10px">
+      <div><b id="topic">Practice</b> <span class="muted" id="progress"></span></div>
+      <button class="btn sec" id="newmat">New material</button>
+    </div>
+
+    <div id="stage">
+      <canvas id="cv"></canvas>
+      <div class="hud">
+        <span class="pill">Gate <span id="gateNo">1</span>/<span id="gateTot">8</span></span>
+        <span class="pill score">⭐ <span id="score">0</span></span>
+      </div>
+
+      <!-- question overlay (game paused while visible) -->
+      <div class="qbox hide" id="qbox">
+        <div class="qcard">
+          <div class="qtop">Gate <span id="qn">1</span> · answer to pass</div>
+          <div class="qtext" id="qtext"></div>
+          <div class="opts" id="opts"></div>
+          <div class="feedback" id="fb"></div>
+        </div>
+      </div>
+
+      <!-- start / crash / win banners -->
+      <div class="banner" id="banner">
+        <h2 id="btitle">Ready?</h2>
+        <p id="bsub" style="margin:0 0 14px;max-width:420px"></p>
+        <button class="btn" id="bbtn">Start</button>
+      </div>
+    </div>
+    <p class="muted" style="font-size:13px;margin-top:10px">
+      A wrong answer sends you back to the start. Correct answers open the gate. +10 / −5 points.
+    </p>
+  </div>
+</div>
+
+<script>
+/* =====================================================================
+   ATTUNE — runner game. The AI's questions become gates.
+   Wrong answer => restart the run from the beginning.
+   ===================================================================== */
+
+const $ = id => document.getElementById(id);
+
+/* ---------- state ---------- */
+let QUIZ = null;              // {topic, questions:[...]}
+let gateIdx = 0;              // which gate/question we're on
+let score = 0;
+let paused = true;            // true while a question is up or before start
+let running = false;
+
+/* ---------- setup screen ---------- */
+let photo = null;
+$('drop').onclick = () => $('file').click();
+$('file').onchange = e => loadPhoto(e.target.files[0]);
+['dragenter','dragover'].forEach(ev => $('drop').addEventListener(ev, e => {
+  e.preventDefault(); $('drop').classList.add('drag'); }));
+['dragleave','drop'].forEach(ev => $('drop').addEventListener(ev, e => {
+  e.preventDefault(); $('drop').classList.remove('drag'); }));
+$('drop').addEventListener('drop', e => {
+  const f = e.dataTransfer.files[0]; if (f) loadPhoto(f);
+});
+$('reset').onclick = () => {
+  photo = null; $('file').value = '';
+  $('preview').classList.add('hide'); $('drop').classList.remove('hide');
+  $('reset').classList.add('hide');
+};
+function loadPhoto(f){
+  if (!f || !f.type.startsWith('image/')) { setStatus('That file isn\'t an image.', true); return; }
+  photo = f;
+  const r = new FileReader();
+  r.onload = () => {
+    $('preview').src = r.result;
+    $('preview').classList.remove('hide');
+    $('drop').classList.add('hide');
+    $('reset').classList.remove('hide');
+    setStatus('');
+  };
+  r.readAsDataURL(f);
+}
+function setStatus(msg, isErr){
+  const s = $('status'); s.textContent = msg;
+  s.className = 'status ' + (isErr ? 'err' : 'muted');
+}
+
+/* ---------- build the quiz from the backend ---------- */
+$('go').onclick = async () => {
+  const text = $('text').value.trim();
+  if (!photo && text.length < 30) {
+    setStatus('Add a photo, or paste at least a couple of sentences.', true); return;
+  }
+  $('go').disabled = true;
+  setStatus('Reading the material and working out the concepts… (this takes ~20s)');
+  try {
+    let res;
+    if (photo) {
+      const fd = new FormData();
+      fd.append('file', photo);
+      fd.append('n', '8');
+      res = await fetch('/api/quiz/image', { method:'POST', body: fd });
+    } else {
+      res = await fetch('/api/quiz/text', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ text, n: 8 })
+      });
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(()=>({detail:'Request failed'}));
+      throw new Error(err.detail || 'Request failed');
+    }
+    QUIZ = await res.json();
+    if (!QUIZ.questions || !QUIZ.questions.length) throw new Error('No questions came back.');
+    startGameSession();
+  } catch (e) {
+    setStatus('Couldn\'t build the game: ' + e.message, true);
+  } finally {
+    $('go').disabled = false;
+  }
+};
+
+function startGameSession(){
+  $('setup').classList.add('hide');
+  $('gamecard').classList.remove('hide');
+  $('topic').textContent = QUIZ.topic || 'Practice';
+  $('gateTot').textContent = QUIZ.questions.length;
+  score = 0; gateIdx = 0;
+  resizeCanvas();
+  showBanner('Ready?', `${QUIZ.questions.length} gates stand between you and the finish. Answer to pass.`, 'Start', () => beginRun());
+}
+$('newmat').onclick = () => {
+  running = false;
+  $('gamecard').classList.add('hide');
+  $('setup').classList.remove('hide');
+};
+
+/* =====================================================================
+   THE GAME
+   ===================================================================== */
+const cv = $('cv'), ctx = cv.getContext('2d');
+let W = 800, H = 340;
+
+function resizeCanvas(){
+  const r = $('stage').getBoundingClientRect();
+  cv.width  = Math.max(320, Math.floor(r.width));
+  cv.height = Math.floor(r.height);
+  W = cv.width; H = cv.height;
+}
+window.addEventListener('resize', resizeCanvas);
+
+const GROUND = () => H - 54;
+
+const player = { x: 90, y: 0, vy: 0, w: 26, h: 34, onGround: true };
+let scrollX = 0;          // world scroll
+let gates = [];           // x positions of gates
+let speed = 2.6;
+let clouds = [];
+
+function buildWorld(){
+  gates = [];
+  const n = QUIZ.questions.length;
+  for (let i = 0; i < n; i++) gates.push(520 + i * 460);   // evenly spaced gates
+  clouds = Array.from({length:6}, () => ({
+    x: Math.random()*2000, y: 30 + Math.random()*90,
+    r: 16 + Math.random()*22, s: .2 + Math.random()*.3
+  }));
+}
+
+function beginRun(){
+  hideBanner();
+  buildWorld();
+  scrollX = 0; gateIdx = 0;
+  player.y = GROUND() - player.h; player.vy = 0; player.onGround = true;
+  paused = false; running = true;
+  $('gateNo').textContent = 1;
+  $('score').textContent = score;
+  requestAnimationFrame(loop);
+}
+
+/* restart the whole run after a wrong answer */
+function crashRestart(){
+  scrollX = 0; gateIdx = 0;
+  player.y = GROUND() - player.h; player.vy = 0;
+  $('gateNo').textContent = 1;
+  showBanner('Back to the start!', 'That answer wasn\'t right — the run resets. You keep your points.', 'Run again', () => {
+    hideBanner(); paused = false; requestAnimationFrame(loop);
+  });
+}
+
+/* jump */
+function jump(){
+  if (paused || !running) return;
+  if (player.onGround){ player.vy = -9.2; player.onGround = false; }
+}
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'ArrowUp'){ e.preventDefault(); jump(); }
+});
+$('stage').addEventListener('pointerdown', e => {
+  if ($('qbox').classList.contains('hide') && $('banner').classList.contains('hide')) jump();
+});
+
+function loop(){
+  if (!running || paused) return;
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function update(){
+  scrollX += speed;
+
+  // gravity
+  player.vy += 0.45;
+  player.y += player.vy;
+  const g = GROUND() - player.h;
+  if (player.y >= g){ player.y = g; player.vy = 0; player.onGround = true; }
+
+  // reached the next gate? -> freeze and ask
+  if (gateIdx < gates.length){
+    const gx = gates[gateIdx] - scrollX;
+    if (gx <= player.x + player.w + 6){
+      paused = true;
+      askQuestion(gateIdx);
+      return;
+    }
+  } else {
+    // past all gates -> finish line
+    const fx = gates[gates.length-1] + 420 - scrollX;
+    if (fx <= player.x + player.w){
+      running = false;
+      showBanner('You made it! 🎉',
+        `Final score: ${score} points. Topic: ${QUIZ.topic}.`,
+        'Play again', () => { score = 0; $('score').textContent = 0; beginRun(); });
+      return;
+    }
+  }
+
+  clouds.forEach(c => { c.x -= c.s; if (c.x < -60) c.x = W + 60; });
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+
+  // clouds
+  ctx.fillStyle = 'rgba(255,255,255,.75)';
+  clouds.forEach(c => {
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, c.r, 0, 7);
+    ctx.arc(c.x + c.r*.8, c.y + 4, c.r*.75, 0, 7);
+    ctx.arc(c.x - c.r*.8, c.y + 5, c.r*.65, 0, 7);
+    ctx.fill();
+  });
+
+  // ground
+  ctx.fillStyle = '#2E7D5B';
+  ctx.fillRect(0, GROUND(), W, H - GROUND());
+  ctx.fillStyle = '#276b4d';
+  for (let x = -(scrollX % 40); x < W; x += 40){
+    ctx.fillRect(x, GROUND(), 20, 6);
+  }
+
+  // gates
+  gates.forEach((gx, i) => {
+    const x = gx - scrollX;
+    if (x < -60 || x > W + 60) return;
+    const passed = i < gateIdx;
+    ctx.fillStyle = passed ? '#BFDDD6' : '#C97A54';
+    ctx.fillRect(x, GROUND() - 120, 12, 120);
+    ctx.fillStyle = passed ? '#DCEBE7' : '#E0A183';
+    ctx.fillRect(x - 4, GROUND() - 128, 20, 10);
+    // number
+    ctx.fillStyle = '#22201B';
+    ctx.font = 'bold 12px Inter, sans-serif';
+    ctx.fillText(String(i+1), x - 2, GROUND() - 134);
+  });
+
+  // finish flag
+  if (gates.length){
+    const fx = gates[gates.length-1] + 420 - scrollX;
+    if (fx > -40 && fx < W + 40){
+      ctx.fillStyle = '#22201B';
+      ctx.fillRect(fx, GROUND() - 110, 4, 110);
+      ctx.fillStyle = '#1E7A6E';
+      ctx.beginPath();
+      ctx.moveTo(fx+4, GROUND()-110); ctx.lineTo(fx+44, GROUND()-98);
+      ctx.lineTo(fx+4, GROUND()-86); ctx.closePath(); ctx.fill();
+    }
+  }
+
+  // player
+  const px = player.x, py = player.y;
+  ctx.fillStyle = '#1E7A6E';
+  roundRect(px, py, player.w, player.h, 6); ctx.fill();
+  ctx.fillStyle = '#fff';                       // eye
+  ctx.beginPath(); ctx.arc(px + 18, py + 12, 3.2, 0, 7); ctx.fill();
+  ctx.fillStyle = '#155B52';                    // legs
+  const t = Math.floor(scrollX / 6) % 2;
+  ctx.fillRect(px + 4, py + player.h, 6, t ? 6 : 3);
+  ctx.fillRect(px + 15, py + player.h, 6, t ? 3 : 6);
+}
+
+function roundRect(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+
+/* =====================================================================
+   QUESTION GATE — the game is frozen while this is up
+   ===================================================================== */
+function askQuestion(i){
+  const q = QUIZ.questions[i];
+  $('qn').textContent = i + 1;
+  $('qtext').textContent = q.prompt;
+  $('fb').textContent = ''; $('fb').className = 'feedback';
+  const box = $('opts'); box.innerHTML = '';
+
+  q.options.forEach((opt, idx) => {
+    const b = document.createElement('button');
+    b.className = 'opt'; b.textContent = opt;
+    b.onclick = () => {
+      [...box.children].forEach(c => c.disabled = true);
+      const correct = idx === q.answer;
+      b.classList.add(correct ? 'right' : 'wrong');
+      if (!correct) box.children[q.answer].classList.add('right');
+
+      score += correct ? 10 : -5;
+      $('score').textContent = score;
+
+      const fb = $('fb');
+      fb.className = 'feedback ' + (correct ? 'good' : 'bad');
+      fb.textContent = (correct ? 'Correct! +10  ' : 'Not quite (−5).  ') + (q.explain || '');
+
+      setTimeout(() => {
+        $('qbox').classList.add('hide');
+        if (correct){
+          gateIdx++;                       // gate opens
+          $('gateNo').textContent = Math.min(gateIdx + 1, QUIZ.questions.length);
+          paused = false;
+          requestAnimationFrame(loop);
+        } else {
+          crashRestart();                  // wrong -> back to the very start
+        }
+      }, correct ? 1300 : 2400);
+    };
+    box.appendChild(b);
+  });
+
+  $('qbox').classList.remove('hide');
+}
+
+/* ---------- banners ---------- */
+function showBanner(title, sub, btn, fn){
+  $('btitle').textContent = title;
+  $('bsub').textContent = sub;
+  $('bbtn').textContent = btn;
+  $('bbtn').onclick = fn;
+  $('banner').classList.remove('hide');
+}
+function hideBanner(){ $('banner').classList.add('hide'); }
+
+/* health check on load, so problems surface early */
+fetch('/api/health').then(r => r.json()).then(h => {
+  if (!h.key_set) setStatus('Server has no OPENROUTER_API_KEY set — see the README.', true);
+}).catch(()=>{});
+</script>
+</body>
+</html>
