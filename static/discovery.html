@@ -303,15 +303,35 @@
       <input id="file" type="file" accept="image/*,application/pdf,.pdf,.doc,.docx,.txt,.md,.csv" multiple class="hide">
       <div id="thumbs" class="thumbs hide"></div>
       <button class="btn sec auto hide" id="addMore" style="margin-top:14px">+ Add more photos</button>
-      <button class="btn" id="buildPhoto" style="margin-top:16px">Build my Space Waves game</button>
+      <button class="btn" id="buildPhoto" style="margin-top:16px">Build my game</button>
       <div class="status" id="photoStatus"></div>
     </div>
   </section>
 
-  <!-- =============== SCREEN 9 · SPACE WAVES GAME =============== -->
+  <!-- =============== SCREEN 8b · CHOOSE A GAME =============== -->
+  <section id="screen-choose" class="hide">
+    <div class="topbar">
+      <span class="chip">Choose a game</span>
+      <button class="homelink" data-hub>← options</button>
+    </div>
+    <h1 style="font-size:28px;margin-top:14px">Your quiz is ready! 🎉</h1>
+    <p class="lead" id="chooseLead">Pick how you want to play — same questions, different game.</p>
+    <button class="opt-card" id="pickWaves">
+      <span class="ic">🚀</span>
+      <span><span class="k">Space Waves</span>
+        <span class="d">Fly a ship and weave through neon obstacles. A question every 200 m.</span></span>
+    </button>
+    <button class="opt-card" id="pickRise">
+      <span class="ic">🎈</span>
+      <span><span class="k">Rise Up</span>
+        <span class="d">Guard a rising balloon from falling objects with your shield. A question every 150 m.</span></span>
+    </button>
+  </section>
+
+  <!-- =============== SCREEN 9 · GAME (Space Waves or Rise Up) =============== -->
   <section id="screen-game" class="hide">
     <div class="topbar">
-      <span class="chip" id="gameTopic">Space Waves</span>
+      <span class="chip" id="gameTopic">Game</span>
       <button class="homelink" data-hub>quit</button>
     </div>
     <div id="stage">
@@ -340,7 +360,7 @@
       </div>
     </div>
     <p class="muted" style="font-size:13px;margin-top:10px;text-align:center">
-      A question every 200 m. Crash into an obstacle and you can respawn — but a
+      A question at every checkpoint. Get hit and you can respawn — but a
       <b>wrong answer ends the run</b> and is saved to your mistakes.
     </p>
   </section>
@@ -365,7 +385,7 @@
    ===================================================================== */
 const $ = id => document.getElementById(id);
 const SCREENS = ['screen-start','screen-intro','screen-break','screen-q','screen-result',
-                 'screen-hub','screen-text','screen-photo','screen-game','screen-review'];
+                 'screen-hub','screen-text','screen-photo','screen-choose','screen-game','screen-review'];
 function show(id){
   SCREENS.forEach(s => $(s).classList.toggle('hide', s !== id));
   if (id !== 'screen-game') stopGame();
@@ -605,7 +625,7 @@ $('buildText').onclick = async () => {
     if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail||'Request failed'); }
     const quiz = await res.json();
     if (!quiz.questions || !quiz.questions.length) throw new Error('No questions came back.');
-    launchGame(quiz);
+    chooseGame(quiz);
   } catch(e){ offerDemo('textStatus', e.message); }
   finally { $('buildText').disabled = false; }
 };
@@ -670,7 +690,7 @@ $('buildPhoto').onclick = async () => {
     if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail||'Request failed'); }
     const quiz = await res.json();
     if (!quiz.questions || !quiz.questions.length) throw new Error('No questions came back.');
-    launchGame(quiz);
+    chooseGame(quiz);
   } catch(e){ offerDemo('photoStatus', e.message); }
   finally { $('buildPhoto').disabled = false; }
 };
@@ -681,25 +701,31 @@ function offerDemo(statusId, msg){
   s.innerHTML = `Couldn't build a game: ${msg}` +
     (KEY_SET ? '' : ' — no OPENROUTER_API_KEY on the server (see README).') + ' ';
   const b = document.createElement('button'); b.className='btn sec auto'; b.style.marginTop='10px';
-  b.textContent = '▶ Play a demo Space Waves game instead';
-  b.onclick = () => launchGame(DEMO_QUIZ);
+  b.textContent = '▶ Play a demo game instead';
+  b.onclick = () => chooseGame(DEMO_QUIZ);
   s.appendChild(document.createElement('br')); s.appendChild(b);
 }
 
 /* =====================================================================
-   SPACE WAVES  — hold to fly up, release to fall. Question every 200 m.
-   Wrong answer = death (logged). Crash into an obstacle = respawn.
+   GAMES — shared machinery + two engines: Space Waves and Rise Up.
+   A question at each game's checkpoint. A wrong answer ends the run and
+   is logged to mistakes. Getting hit by an obstacle lets you respawn.
    ===================================================================== */
 const cv = $('cv'), ctx = cv.getContext('2d');
 let GW = 640, GH = 440;
-const PX_PER_M = 6;            // horizontal pixels per metre
-const V_METRES = 0.2;          // metres advanced per frame
-const CHECK_M = 200;           // a question every 200 m
-let GAME = null;               // {topic, questions}
-let g = null;                  // live game state
+let GAME = null;                 // {topic, questions}
+let g = null;                    // live run state (shape depends on active game)
 let rafId = 0;
-let holding = false;
+let holding = false;             // Space Waves thrust
 let stars = [];
+
+/* per-active-game hooks, set by startWaves() / startRise() */
+let CHECK = 200;                 // metres between questions
+let activeLoop = null;           // running game's frame fn
+let activeRespawn = null;        // respawn handler
+let activePlayAgain = null;      // win -> play again
+let activeGameId = 'waves';
+let activeName = 'Space Waves';
 
 function resizeGame(){
   const r = $('stage').getBoundingClientRect();
@@ -708,174 +734,24 @@ function resizeGame(){
   GW = cv.width; GH = cv.height;
 }
 window.addEventListener('resize', () => { if (!$('screen-game').classList.contains('hide')) resizeGame(); });
-
-function launchGame(quiz){
-  GAME = quiz;
-  $('gameTopic').textContent = quiz.topic || 'Space Waves';
-  $('hudQT').textContent = quiz.questions.length;
-  show('screen-game');
-  resizeGame();
-  stars = Array.from({length:70}, () => ({x:Math.random()*GW, y:Math.random()*GH, z:Math.random()*.8+.2}));
-  newRun();
-  overlay('Space Waves', `Fly through ${quiz.questions.length*CHECK_M} m of space across ` +
-    `${quiz.questions.length} question${quiz.questions.length>1?'s':''} — one every ${CHECK_M} m. ` +
-    `Crash and you can respawn — but a wrong answer ends the run.`, [['Launch 🚀', beginRun]]);
-}
-
-function newRun(){
-  g = { dist:0, speed:V_METRES, nextQ:0, y:GH/2, vy:0, trail:[], obstacles:[],
-        lastObstacleM:0, grace:0, running:false, paused:true, awaitingQ:false };
-  $('hudDist').textContent = 0; $('hudQ').textContent = 0;
-}
-function beginRun(){
-  hideOverlay(); $('gq').classList.add('hide');
-  g.running = true; g.paused = false;
-  rafId = requestAnimationFrame(loop);
-}
 function stopGame(){ if (rafId) cancelAnimationFrame(rafId); rafId = 0; if (g) g.running = false; }
 
-/* controls */
-function down(e){ if (e && e.cancelable) e.preventDefault(); holding = true; }
-function up(){ holding = false; }
-cv.addEventListener('pointerdown', down);
-window.addEventListener('pointerup', up);
-window.addEventListener('keydown', e => { if ((e.code==='Space'||e.code==='ArrowUp') && !$('screen-game').classList.contains('hide')){ e.preventDefault(); holding = true; } });
-window.addEventListener('keyup', e => { if (e.code==='Space'||e.code==='ArrowUp') holding = false; });
-
-const PLAYER_X = () => Math.round(GW*0.26);
-
-function spawnObstacles(){
-  // add obstacles ahead until we cover the visible distance + buffer
-  const aheadM = g.dist + (GW/PX_PER_M) + 20;
-  const spacingM = 16;
-  while (g.lastObstacleM < aheadM){
-    g.lastObstacleM += spacingM;
-    // don't drop an obstacle right on a checkpoint
-    const intoBlock = g.lastObstacleM % CHECK_M;
-    if (intoBlock < 8 || intoBlock > CHECK_M - 8) continue;
-    const gapH = Math.max(120, 190 - g.dist*0.04);
-    const gapY = 60 + Math.random()*(GH-120-gapH);
-    g.obstacles.push({m:g.lastObstacleM, gapY, gapH, w:20});
-  }
-  g.obstacles = g.obstacles.filter(o => (o.m - g.dist)*PX_PER_M > -60);
+/* ---------- choose a game (same quiz, two ways to play) ---------- */
+function chooseGame(quiz){
+  GAME = quiz;
+  const nq = quiz.questions.length;
+  $('chooseLead').textContent = `${nq} question${nq>1?'s':''} on “${quiz.topic||'your material'}”. ` +
+    `Pick how you want to play — same questions, different game.`;
+  show('screen-choose');
 }
+$('pickWaves').onclick = () => startWaves();
+$('pickRise').onclick  = () => startRise();
 
-function loop(){
-  if (!g.running || g.paused){ return; }
-  update();
-  draw();
-  rafId = requestAnimationFrame(loop);
-}
-
-function update(){
-  g.dist += g.speed;
-  $('hudDist').textContent = Math.floor(g.dist);
-
-  // physics: hold = thrust up, else gravity down
-  g.vy += holding ? -0.42 : 0.42;
-  g.vy = Math.max(-6.5, Math.min(6.5, g.vy));
-  g.y += g.vy;
-
-  // trail
-  g.trail.push({x:PLAYER_X(), y:g.y}); if (g.trail.length>26) g.trail.shift();
-
-  if (g.grace > 0) g.grace--;
-
-  // edges kill (unless grace)
-  if ((g.y < 10 || g.y > GH-10) && g.grace<=0){ crash(); return; }
-  g.y = Math.max(10, Math.min(GH-10, g.y));
-
-  spawnObstacles();
-
-  // collision
-  if (g.grace<=0){
-    const px = PLAYER_X();
-    for (const o of g.obstacles){
-      const ox = px + (o.m - g.dist)*PX_PER_M;
-      if (ox < px+12 && ox+o.w > px-12){
-        if (g.y - 9 < o.gapY || g.y + 9 > o.gapY + o.gapH){ crash(); return; }
-      }
-    }
-  }
-
-  // checkpoint question every CHECK_M metres
-  if (g.nextQ < GAME.questions.length){
-    const target = (g.nextQ+1)*CHECK_M;
-    if (g.dist >= target){ askGameQuestion(); return; }
-  } else {
-    win(); return;
-  }
-
-  // drift stars
-  stars.forEach(s => { s.x -= g.speed*PX_PER_M*s.z*0.6; if (s.x < 0){ s.x = GW; s.y = Math.random()*GH; } });
-}
-
-function draw(){
-  ctx.fillStyle = '#0a0a1f'; ctx.fillRect(0,0,GW,GH);
-  // stars
-  stars.forEach(s => { ctx.globalAlpha = s.z; ctx.fillStyle = '#cfe0ff';
-    ctx.fillRect(s.x, s.y, 2, 2); });
-  ctx.globalAlpha = 1;
-
-  // obstacles (neon gates)
-  const px = PLAYER_X();
-  g.obstacles.forEach(o => {
-    const x = px + (o.m - g.dist)*PX_PER_M;
-    if (x < -30 || x > GW+30) return;
-    ctx.fillStyle = '#ff4d8d'; ctx.shadowColor = '#ff4d8d'; ctx.shadowBlur = 12;
-    ctx.fillRect(x, 0, o.w, o.gapY);
-    ctx.fillRect(x, o.gapY+o.gapH, o.w, GH-(o.gapY+o.gapH));
-    ctx.shadowBlur = 0;
-  });
-
-  // checkpoint marker line for the next question
-  if (g.nextQ < GAME.questions.length){
-    const cx = px + ((g.nextQ+1)*CHECK_M - g.dist)*PX_PER_M;
-    if (cx > 0 && cx < GW){
-      ctx.strokeStyle = 'rgba(126,240,208,.5)'; ctx.setLineDash([6,8]); ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(cx,0); ctx.lineTo(cx,GH); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = '#7ef0d0'; ctx.font = 'bold 12px Inter, sans-serif';
-      ctx.fillText(`${(g.nextQ+1)*CHECK_M}m`, cx+5, 18);
-    }
-  }
-
-  // trail
-  ctx.strokeStyle = 'rgba(126,240,255,.35)'; ctx.lineWidth = 8; ctx.lineCap='round';
-  ctx.beginPath(); g.trail.forEach((p,i)=> i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.stroke();
-
-  // ship
-  const flash = g.grace>0 && (Math.floor(g.grace/5)%2===0);
-  ctx.fillStyle = flash ? '#5a8fff' : '#7ef0ff';
-  ctx.shadowColor = '#7ef0ff'; ctx.shadowBlur = 16;
-  ctx.beginPath();
-  ctx.moveTo(px+13, g.y); ctx.lineTo(px-9, g.y-8); ctx.lineTo(px-4, g.y); ctx.lineTo(px-9, g.y+8);
-  ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0;
-}
-
-/* crash → respawn allowed */
-function crash(){
-  g.running = false; stopGame();
-  $('hintTap').classList.add('hide');
-  overlay('💥 Crashed!', `You hit an obstacle at ${Math.floor(g.dist)} m. That wasn't a wrong answer — ` +
-    `you can respawn and keep going.`, [
-      ['Respawn ↻', respawn],
-      ['Quit', goHub, 'ghost'],
-    ]);
-}
-function respawn(){
-  hideOverlay(); $('hintTap').classList.remove('hide');
-  g.y = GH/2; g.vy = 0; g.grace = 110; g.trail = [];
-  // clear obstacles currently on screen so respawn is fair
-  g.obstacles = g.obstacles.filter(o => (o.m - g.dist)*PX_PER_M > GW);
-  g.running = true; g.paused = false;
-  rafId = requestAnimationFrame(loop);
-}
-
-/* checkpoint question */
+/* ---------- shared: checkpoint question ---------- */
 function askGameQuestion(){
   g.paused = true; g.awaitingQ = true;
   const q = GAME.questions[g.nextQ];
-  $('gqDist').textContent = (g.nextQ+1)*CHECK_M;
+  $('gqDist').textContent = (g.nextQ+1)*CHECK;
   $('gqText').textContent = q.prompt;
   $('gqFb').textContent = ''; $('gqFb').className = 'fb';
   $('hudQ').textContent = g.nextQ;
@@ -894,30 +770,26 @@ function gameAnswer(idx, btn, box, q){
   btn.classList.add(correct ? 'right' : 'wrong');
   if (!correct) box.children[q.answer].classList.add('right');
   const fb = $('gqFb'); fb.className = 'fb ' + (correct ? 'good':'bad');
-  fb.textContent = (correct ? 'Correct — gate open! ' : 'Wrong — the run ends here. ') + (q.explain||'');
+  fb.textContent = (correct ? 'Correct — keep going! ' : 'Wrong — the run ends here. ') + (q.explain||'');
 
   if (correct){
     setTimeout(() => {
       $('gq').classList.add('hide');
       g.nextQ++; $('hudQ').textContent = g.nextQ;
-      g.speed += 0.012;                 // gets a little faster each checkpoint
-      g.paused = false; rafId = requestAnimationFrame(loop);
+      if (g.nextQ >= GAME.questions.length){ winGame(); return; }
+      g.speed *= 1.06;                      // a little faster each checkpoint
+      g.paused = false; rafId = requestAnimationFrame(activeLoop);
     }, 1000);
   } else {
-    // log the mistake for later review
     saveMistake({
-      topic: GAME.topic || 'Space Waves',
-      question: q.prompt,
-      options: q.options,
-      chosen: idx, answer: q.answer,
-      explain: q.explain || '',
-      distance: (g.nextQ+1)*CHECK_M,
-      when: new Date().toISOString(),
+      topic: GAME.topic || activeName, game: activeName,
+      question: q.prompt, options: q.options,
+      chosen: idx, answer: q.answer, explain: q.explain || '',
+      distance: (g.nextQ+1)*CHECK, when: new Date().toISOString(),
     });
     setTimeout(() => {
-      $('gq').classList.add('hide');
-      g.running = false; stopGame();
-      overlay('☄️ Wrong answer', `Your ship is lost at ${(g.nextQ+1)} of ${GAME.questions.length} checkpoints. ` +
+      $('gq').classList.add('hide'); stopGame();
+      overlay('☄️ Wrong answer', `Out at question ${g.nextQ+1} of ${GAME.questions.length}. ` +
         `This mistake is saved so ${childName} can review it.`, [
           ['Review this mistake 🚩', renderReview],
           ['Back to options', goHub, 'ghost'],
@@ -925,17 +797,22 @@ function gameAnswer(idx, btn, box, q){
     }, 1500);
   }
 }
-
-function win(){
-  g.running = false; stopGame();
-  overlay(`🏆 You made it, ${childName}!`, `All ${GAME.questions.length} checkpoints cleared across ` +
-    `${GAME.questions.length*CHECK_M} m of space. Every answer correct.`, [
-      ['Play again', () => { newRun(); beginRun(); }],
+function winGame(){
+  stopGame();
+  overlay(`🏆 You made it, ${childName}!`, `All ${GAME.questions.length} checkpoints cleared — ` +
+    `${GAME.questions.length*CHECK} m in ${activeName}, every answer correct.`, [
+      ['Play again', activePlayAgain],
       ['Back to options', goHub, 'ghost'],
     ]);
 }
-
-/* overlay helper */
+function crashGame(msg){
+  stopGame(); $('hintTap').classList.add('hide');
+  overlay('💥 ' + msg, `That wasn't a wrong answer — you can respawn and keep going from ` +
+    `${Math.floor(g.dist)} m.`, [
+      ['Respawn ↻', activeRespawn],
+      ['Quit', goHub, 'ghost'],
+    ]);
+}
 function overlay(title, sub, buttons){
   $('goTitle').textContent = title; $('goSub').textContent = sub;
   const box = $('goBtns'); box.innerHTML = '';
@@ -947,6 +824,241 @@ function overlay(title, sub, buttons){
   $('gOver').classList.remove('hide');
 }
 function hideOverlay(){ $('gOver').classList.add('hide'); }
+
+/* ---------- shared controls (dispatch by active game) ---------- */
+function shieldFromEvent(e){
+  if (!g) return;
+  const r = cv.getBoundingClientRect();
+  const x = (e.clientX - r.left) * (cv.width / r.width);
+  g.shieldX = Math.max(g.shieldW/2, Math.min(GW - g.shieldW/2, x));
+}
+cv.addEventListener('pointerdown', e => {
+  if (e.cancelable) e.preventDefault();
+  if (activeGameId === 'waves') holding = true;
+  else if (activeGameId === 'rise') shieldFromEvent(e);
+});
+cv.addEventListener('pointermove', e => { if (activeGameId === 'rise') shieldFromEvent(e); });
+window.addEventListener('pointerup', () => { holding = false; });
+window.addEventListener('keydown', e => {
+  if ($('screen-game').classList.contains('hide')) return;
+  if (activeGameId === 'waves' && (e.code==='Space' || e.code==='ArrowUp')){ e.preventDefault(); holding = true; }
+  if (activeGameId === 'rise' && g){
+    if (e.code==='ArrowLeft'){  e.preventDefault(); g.shieldX = Math.max(g.shieldW/2, g.shieldX-30); }
+    if (e.code==='ArrowRight'){ e.preventDefault(); g.shieldX = Math.min(GW-g.shieldW/2, g.shieldX+30); }
+  }
+});
+window.addEventListener('keyup', e => { if (e.code==='Space' || e.code==='ArrowUp') holding = false; });
+
+/* =====================================================================
+   SPACE WAVES — hold to fly up, release to fall. Question every 200 m.
+   ===================================================================== */
+const PX_PER_M = 6, V_METRES = 0.2;
+const PLAYER_X = () => Math.round(GW*0.26);
+
+function startWaves(){
+  CHECK = 200; activeGameId = 'waves'; activeName = 'Space Waves';
+  activeLoop = wavesLoop; activeRespawn = wavesRespawn;
+  activePlayAgain = () => { wavesNew(); wavesBegin(); };
+  $('gameTopic').textContent = GAME.topic || 'Space Waves';
+  $('hudQT').textContent = GAME.questions.length;
+  $('hintTap').textContent = 'Hold anywhere to fly up · release to fall';
+  $('hintTap').classList.remove('hide');
+  show('screen-game'); resizeGame();
+  stars = Array.from({length:70}, () => ({x:Math.random()*GW, y:Math.random()*GH, z:Math.random()*.8+.2}));
+  wavesNew();
+  overlay('🚀 Space Waves', `Fly through ${GAME.questions.length*CHECK} m across ` +
+    `${GAME.questions.length} question${GAME.questions.length>1?'s':''} — one every ${CHECK} m. ` +
+    `Crash and you can respawn; a wrong answer ends the run.`, [['Launch 🚀', wavesBegin]]);
+}
+function wavesNew(){
+  g = { dist:0, speed:V_METRES, nextQ:0, y:GH/2, vy:0, trail:[], obstacles:[],
+        lastObstacleM:0, grace:0, running:false, paused:true, awaitingQ:false };
+  $('hudDist').textContent = 0; $('hudQ').textContent = 0;
+}
+function wavesBegin(){ hideOverlay(); $('gq').classList.add('hide'); $('hintTap').classList.remove('hide');
+  g.running = true; g.paused = false; rafId = requestAnimationFrame(wavesLoop); }
+function wavesLoop(){ if (!g.running || g.paused) return; wavesUpdate(); wavesDraw(); rafId = requestAnimationFrame(wavesLoop); }
+function wavesSpawn(){
+  const aheadM = g.dist + (GW/PX_PER_M) + 20, spacingM = 16;
+  while (g.lastObstacleM < aheadM){
+    g.lastObstacleM += spacingM;
+    const into = g.lastObstacleM % CHECK;
+    if (into < 8 || into > CHECK - 8) continue;
+    const gapH = Math.max(120, 190 - g.dist*0.04);
+    const gapY = 60 + Math.random()*(GH-120-gapH);
+    g.obstacles.push({m:g.lastObstacleM, gapY, gapH, w:20});
+  }
+  g.obstacles = g.obstacles.filter(o => (o.m - g.dist)*PX_PER_M > -60);
+}
+function wavesUpdate(){
+  g.dist += g.speed; $('hudDist').textContent = Math.floor(g.dist);
+  g.vy += holding ? -0.42 : 0.42; g.vy = Math.max(-6.5, Math.min(6.5, g.vy)); g.y += g.vy;
+  g.trail.push({x:PLAYER_X(), y:g.y}); if (g.trail.length>26) g.trail.shift();
+  if (g.grace > 0) g.grace--;
+  if ((g.y < 10 || g.y > GH-10) && g.grace<=0){ crashGame('Crashed!'); return; }
+  g.y = Math.max(10, Math.min(GH-10, g.y));
+  wavesSpawn();
+  if (g.grace<=0){
+    const px = PLAYER_X();
+    for (const o of g.obstacles){
+      const ox = px + (o.m - g.dist)*PX_PER_M;
+      if (ox < px+12 && ox+o.w > px-12){
+        if (g.y - 9 < o.gapY || g.y + 9 > o.gapY + o.gapH){ crashGame('Crashed!'); return; }
+      }
+    }
+  }
+  if (g.nextQ < GAME.questions.length && g.dist >= (g.nextQ+1)*CHECK){ askGameQuestion(); return; }
+  stars.forEach(s => { s.x -= g.speed*PX_PER_M*s.z*0.6; if (s.x < 0){ s.x = GW; s.y = Math.random()*GH; } });
+}
+function wavesDraw(){
+  ctx.fillStyle = '#0a0a1f'; ctx.fillRect(0,0,GW,GH);
+  stars.forEach(s => { ctx.globalAlpha = s.z; ctx.fillStyle = '#cfe0ff'; ctx.fillRect(s.x, s.y, 2, 2); });
+  ctx.globalAlpha = 1;
+  const px = PLAYER_X();
+  g.obstacles.forEach(o => {
+    const x = px + (o.m - g.dist)*PX_PER_M;
+    if (x < -30 || x > GW+30) return;
+    ctx.fillStyle = '#ff4d8d'; ctx.shadowColor = '#ff4d8d'; ctx.shadowBlur = 12;
+    ctx.fillRect(x, 0, o.w, o.gapY); ctx.fillRect(x, o.gapY+o.gapH, o.w, GH-(o.gapY+o.gapH));
+    ctx.shadowBlur = 0;
+  });
+  if (g.nextQ < GAME.questions.length){
+    const cx = px + ((g.nextQ+1)*CHECK - g.dist)*PX_PER_M;
+    if (cx > 0 && cx < GW){
+      ctx.strokeStyle = 'rgba(126,240,208,.5)'; ctx.setLineDash([6,8]); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(cx,0); ctx.lineTo(cx,GH); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = '#7ef0d0'; ctx.font = 'bold 12px Inter, sans-serif';
+      ctx.fillText(`${(g.nextQ+1)*CHECK}m`, cx+5, 18);
+    }
+  }
+  ctx.strokeStyle = 'rgba(126,240,255,.35)'; ctx.lineWidth = 8; ctx.lineCap='round';
+  ctx.beginPath(); g.trail.forEach((p,i)=> i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.stroke();
+  const flash = g.grace>0 && (Math.floor(g.grace/5)%2===0);
+  ctx.fillStyle = flash ? '#5a8fff' : '#7ef0ff'; ctx.shadowColor = '#7ef0ff'; ctx.shadowBlur = 16;
+  ctx.beginPath();
+  ctx.moveTo(px+13, g.y); ctx.lineTo(px-9, g.y-8); ctx.lineTo(px-4, g.y); ctx.lineTo(px-9, g.y+8);
+  ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0;
+}
+function wavesRespawn(){
+  hideOverlay(); $('hintTap').classList.remove('hide');
+  g.y = GH/2; g.vy = 0; g.grace = 110; g.trail = [];
+  g.obstacles = g.obstacles.filter(o => (o.m - g.dist)*PX_PER_M > GW);
+  g.running = true; g.paused = false; rafId = requestAnimationFrame(wavesLoop);
+}
+
+/* =====================================================================
+   RISE UP — a balloon floats higher; move your shield to knock falling
+   objects away before they pop it. Question every 150 m.
+   ===================================================================== */
+const V_RISE = 0.16;
+
+function startRise(){
+  CHECK = 150; activeGameId = 'rise'; activeName = 'Rise Up';
+  activeLoop = riseLoop; activeRespawn = riseRespawn;
+  activePlayAgain = () => { riseNew(); riseBegin(); };
+  $('gameTopic').textContent = GAME.topic || 'Rise Up';
+  $('hudQT').textContent = GAME.questions.length;
+  $('hintTap').textContent = 'Move to aim your shield · block objects before they pop the balloon';
+  $('hintTap').classList.remove('hide');
+  show('screen-game'); resizeGame();
+  riseNew();
+  overlay('🎈 Rise Up', `Protect the balloon for ${GAME.questions.length*CHECK} m across ` +
+    `${GAME.questions.length} question${GAME.questions.length>1?'s':''} — one every ${CHECK} m. ` +
+    `Get popped and you can respawn; a wrong answer ends the run.`, [['Lift off 🎈', riseBegin]]);
+}
+function riseNew(){
+  g = { dist:0, speed:V_RISE, nextQ:0, obstacles:[], spawnTimer:40, grace:0,
+        shieldX:GW/2, shieldW:110, running:false, paused:true, awaitingQ:false };
+  $('hudDist').textContent = 0; $('hudQ').textContent = 0;
+}
+function riseBegin(){ hideOverlay(); $('gq').classList.add('hide'); $('hintTap').classList.remove('hide');
+  g.running = true; g.paused = false; rafId = requestAnimationFrame(riseLoop); }
+function riseLoop(){ if (!g.running || g.paused) return; riseUpdate(); riseDraw(); rafId = requestAnimationFrame(riseLoop); }
+
+const SHIELD_Y = () => Math.round(GH*0.46);
+const BALLOON = () => ({ x: GW/2 + Math.sin(g.dist*0.03)*GW*0.16, y: Math.round(GH*0.76), r: 22 });
+
+function riseUpdate(){
+  g.dist += g.speed; $('hudDist').textContent = Math.floor(g.dist);
+  if (g.grace > 0) g.grace--;
+
+  // spawn falling objects
+  if (--g.spawnTimer <= 0){
+    g.spawnTimer = Math.max(20, 44 - g.dist*0.04);
+    const r = 12 + Math.random()*7;
+    g.obstacles.push({ x: 30 + Math.random()*(GW-60), y:-20, py:-20, r,
+      vy: 1.9 + Math.random()*1.1 + g.dist*0.0025, vx:0, spin:Math.random()*6, dealt:false });
+  }
+
+  const sy = SHIELD_Y(), b = BALLOON();
+  for (const o of g.obstacles){
+    o.py = o.y; o.y += o.vy; o.x += o.vx; o.spin += 0.15;
+    // crossing the shield plane -> deflect if the shield is under it
+    if (!o.dealt && o.py < sy && o.y >= sy){
+      if (Math.abs(o.x - g.shieldX) <= g.shieldW/2 + o.r){
+        o.dealt = true; o.vy = -Math.abs(o.vy)*0.7 - 1.5;
+        o.vx = (o.x < g.shieldX ? -1 : 1) * (2 + Math.random()*2.5);
+      }
+    }
+    // balloon hit (only undeflected objects, and only when not in grace)
+    if (!o.dealt && g.grace<=0 && Math.hypot(o.x-b.x, o.y-b.y) < b.r + o.r){ crashGame('Balloon popped!'); return; }
+  }
+  g.obstacles = g.obstacles.filter(o => o.y < GH+40 && o.y > -80 && o.x > -60 && o.x < GW+60);
+
+  if (g.nextQ < GAME.questions.length && g.dist >= (g.nextQ+1)*CHECK){ askGameQuestion(); return; }
+}
+function riseDraw(){
+  // sky
+  const grd = ctx.createLinearGradient(0,0,0,GH);
+  grd.addColorStop(0,'#8ec5e6'); grd.addColorStop(1,'#dff0f7');
+  ctx.fillStyle = grd; ctx.fillRect(0,0,GW,GH);
+  // drifting clouds (scroll down to sell 'rising')
+  ctx.fillStyle = 'rgba(255,255,255,.55)';
+  for (let i=0;i<5;i++){
+    const cyc = (g.dist*3 + i*140) % (GH+120) - 60;
+    const cx = (i*173 % GW);
+    ctx.beginPath(); ctx.arc(cx, cyc, 20, 0, 7); ctx.arc(cx+22, cyc+6, 16, 0, 7); ctx.arc(cx-20, cyc+7, 14, 0, 7); ctx.fill();
+  }
+  const sy = SHIELD_Y(), b = BALLOON();
+  // "next question" marker text
+  if (g.nextQ < GAME.questions.length){
+    ctx.fillStyle = 'rgba(21,91,82,.75)'; ctx.font = 'bold 12px Inter, sans-serif'; ctx.textAlign='center';
+    ctx.fillText(`next question at ${(g.nextQ+1)*CHECK} m`, GW/2, 22); ctx.textAlign='start';
+  }
+  // balloon + string + basket
+  ctx.strokeStyle = '#7a6a58'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(b.x, b.y+b.r); ctx.lineTo(b.x, b.y+b.r+16); ctx.stroke();
+  ctx.fillStyle = '#8a5a3c'; ctx.fillRect(b.x-7, b.y+b.r+16, 14, 10);
+  ctx.fillStyle = '#e8503a'; ctx.shadowColor='rgba(0,0,0,.15)'; ctx.shadowBlur=8;
+  ctx.beginPath(); ctx.ellipse(b.x, b.y, b.r, b.r+3, 0, 0, 7); ctx.fill(); ctx.shadowBlur=0;
+  ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.ellipse(b.x-7, b.y-8, 5, 8, -0.4, 0, 7); ctx.fill();
+  // objects (spiky asteroids)
+  g.obstacles.forEach(o => {
+    ctx.save(); ctx.translate(o.x, o.y); ctx.rotate(o.spin);
+    ctx.fillStyle = o.dealt ? '#9fb0c0' : '#5b4636';
+    ctx.beginPath();
+    for (let k=0;k<8;k++){ const a=k/8*Math.PI*2; const rr=o.r*(k%2?0.6:1); ctx.lineTo(Math.cos(a)*rr, Math.sin(a)*rr); }
+    ctx.closePath(); ctx.fill(); ctx.restore();
+  });
+  // shield (teal arc bar the player controls)
+  ctx.fillStyle = '#1E7A6E'; ctx.strokeStyle='#0f5049'; ctx.lineWidth=2;
+  const shH = 12;
+  ctx.beginPath();
+  ctx.moveTo(g.shieldX - g.shieldW/2, sy);
+  ctx.quadraticCurveTo(g.shieldX, sy - shH*1.6, g.shieldX + g.shieldW/2, sy);
+  ctx.quadraticCurveTo(g.shieldX, sy + shH, g.shieldX - g.shieldW/2, sy);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  // grace flash on balloon
+  if (g.grace>0 && Math.floor(g.grace/6)%2===0){
+    ctx.strokeStyle='rgba(30,122,110,.8)'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r+8, 0, 7); ctx.stroke();
+  }
+}
+function riseRespawn(){
+  hideOverlay(); $('hintTap').classList.remove('hide');
+  g.obstacles = []; g.grace = 120; g.spawnTimer = 40;
+  g.running = true; g.paused = false; rafId = requestAnimationFrame(riseLoop);
+}
 
 /* =====================================================================
    MISTAKE REVIEW
@@ -966,7 +1078,7 @@ function renderReview(){
     const when = isNaN(d) ? '' : d.toLocaleDateString(undefined,{month:'short',day:'numeric'}) + ' · ' +
       d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
     el.innerHTML =
-      `<p class="meta">${escapeHtml(m.topic)} · ${m.distance||''} m · ${when}</p>` +
+      `<p class="meta">${escapeHtml(m.topic)}${m.game ? ' · '+escapeHtml(m.game) : ''} · ${m.distance||''} m · ${when}</p>` +
       `<p class="q">${escapeHtml(m.question)}</p>` +
       `<div class="ans wrong">They chose: ${escapeHtml(m.options[m.chosen])}</div>` +
       `<div class="ans right">Correct answer: ${escapeHtml(m.options[m.answer])}</div>` +
