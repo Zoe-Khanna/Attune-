@@ -14,6 +14,7 @@ Run locally:
 
 import os, io, json, re, base64, random, time
 from typing import List, Optional
+import urllib.parse
 
 import requests
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
@@ -319,10 +320,90 @@ def _read_upload(name: str, mime: str, data: bytes):
         raise HTTPException(400, f"Unsupported file type: {name or 'file'}")
 
 
+# ---------------------------------------------------------------- web research
+UA = {"User-Agent": "Attune/1.0 (educational quiz builder)"}
+
+
+def _get_json(url, timeout=15):
+    r = requests.get(url, timeout=timeout, headers=UA)
+    r.raise_for_status()
+    return r.json()
+
+
+def _search_query(text: str) -> str:
+    """Ask a fast model for a concise web-search query naming the real topic."""
+    try:
+        model = pick_model("text")
+        q = _chat([{"role": "user", "content":
+            "From the study material below, output ONLY a concise web-search query naming the main "
+            "topic. If it is a book, work, person or event, give the exact title/name (add the author "
+            "if it is a book). No quotes, no explanation, max 8 words.\n\nMATERIAL:\n" + text[:1200]}],
+            model, 0.0, max_tokens=40)
+        q = (q or "").strip().splitlines()[0].strip().strip('"').strip()
+        return q[:120] or text[:80]
+    except Exception as e:
+        print("query distil failed:", e)
+        return text[:80]
+
+
+def _wikipedia(query: str, max_articles=2, chars=3500):
+    out = []
+    try:
+        s = _get_json("https://en.wikipedia.org/w/api.php?" + urllib.parse.urlencode({
+            "action": "query", "list": "search", "srsearch": query,
+            "format": "json", "srlimit": max_articles}))
+        titles = [h["title"] for h in s.get("query", {}).get("search", [])][:max_articles]
+        for title in titles:
+            e = _get_json("https://en.wikipedia.org/w/api.php?" + urllib.parse.urlencode({
+                "action": "query", "prop": "extracts", "explaintext": 1, "redirects": 1,
+                "titles": title, "format": "json"}))
+            for p in e.get("query", {}).get("pages", {}).values():
+                ex = (p.get("extract") or "").strip()
+                if len(ex) > 60:
+                    out.append(f"## {title}\n{ex[:chars]}")
+    except Exception as e:
+        print("wikipedia lookup failed:", e)
+    return out
+
+
+def _duckduckgo(query: str):
+    try:
+        d = _get_json("https://api.duckduckgo.com/?" + urllib.parse.urlencode({
+            "q": query, "format": "json", "no_html": 1, "skip_disambig": 1}))
+        parts = []
+        if d.get("AbstractText"):
+            parts.append(d["AbstractText"])
+        for t in d.get("RelatedTopics", [])[:6]:
+            if isinstance(t, dict) and t.get("Text"):
+                parts.append(t["Text"])
+        return "\n".join(parts)[:1500]
+    except Exception as e:
+        print("duckduckgo lookup failed:", e)
+        return ""
+
+
+def research(text: str):
+    """Look the topic up online and return (enriched_material, topic_query, found?)."""
+    query = _search_query(text)
+    blocks = _wikipedia(query)
+    ddg = _duckduckgo(query)
+    parts = []
+    if blocks:
+        parts.append("\n\n".join(blocks))
+    if ddg:
+        parts.append("Web summary:\n" + ddg)
+    if not parts:
+        return text, query, False
+    enriched = (f"TOPIC LOOKED UP ONLINE: {query}\n\n" + "\n\n".join(parts) +
+                "\n\n---\nORIGINAL INPUT FROM THE STUDENT (may be brief):\n" + text)
+    return enriched, query, True
+
+
 # ---------------------------------------------------------------- API
 class TextIn(BaseModel):
     text: str
     n: int = 20
+    research: bool = True
 
 
 @app.get("/api/health")
@@ -333,15 +414,23 @@ def health():
 
 @app.post("/api/quiz/text")
 def quiz_from_text(body: TextIn):
-    if len(body.text.strip()) < 30:
-        raise HTTPException(400, "Please provide a bit more text.")
+    text = body.text.strip()
+    if len(text) < 2:
+        raise HTTPException(400, "Type a topic, a book name, or some text.")
+    # Look the topic up online first — this lets even a book title or a one-line
+    # tidbit become a real quiz. Falls back to the raw text if nothing is found.
+    if body.research:
+        text, _topic, _found = research(text)
+    elif len(text) < 30:
+        raise HTTPException(400, "Add a bit more text, or turn on 'look it up online'.")
     n = max(3, min(N_CAP, body.n))
-    content = GENERATE_PROMPT.format(n=n) + "\n\nSTUDY MATERIAL:\n\n" + body.text
+    content = GENERATE_PROMPT.format(n=n) + "\n\nSTUDY MATERIAL:\n\n" + text
     return generate(content, "text", n)
 
 
 @app.post("/api/quiz/file")
-async def quiz_from_files(files: List[UploadFile] = File(...), n: int = Form(20)):
+async def quiz_from_files(files: List[UploadFile] = File(...), n: int = Form(20),
+                          research_flag: bool = Form(True)):
     """Photos AND documents (PDF, Word, txt). Reads/scans them all, then builds one quiz."""
     if not files:
         raise HTTPException(400, "Add at least one file.")
@@ -361,6 +450,9 @@ async def quiz_from_files(files: List[UploadFile] = File(...), n: int = Form(20)
 
     n = max(3, min(N_CAP, n))
     text_blob = "\n\n".join(texts).strip()
+    # Thin text upload (e.g. a title page or a short note) and no images -> look it up online.
+    if research_flag and not images and 0 < len(text_blob) < 600:
+        text_blob, _topic, _found = research(text_blob)
     if images:
         lead = "\n\nSTUDY MATERIAL is below. Read EVERYTHING — "
         lead += (f"{len(images)} page image(s)" if images else "")
