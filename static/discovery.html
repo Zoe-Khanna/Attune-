@@ -14,7 +14,7 @@
   *{box-sizing:border-box}
   body{margin:0;background:var(--paper);color:var(--ink);
     font-family:'Inter',system-ui,sans-serif;display:flex;justify-content:center;-webkit-font-smoothing:antialiased;}
-  .wrap{width:100%;max-width:640px;padding:26px 20px 60px;}
+  .wrap{width:100%;max-width:660px;padding:26px 20px 60px;}
 
   .eyebrow{font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--teal);
     font-weight:700;margin:0 0 12px;}
@@ -26,9 +26,10 @@
   .card{background:#fff;border:1px solid var(--line);border-radius:20px;padding:26px;margin-top:22px;
     box-shadow:0 2px 14px rgba(34,32,27,.04);}
   label{display:block;font-weight:700;font-size:16px;margin:0 0 10px;}
-  input[type=text]{width:100%;padding:15px 16px;border:1px solid var(--line);border-radius:12px;
+  input[type=text],textarea{width:100%;padding:15px 16px;border:1px solid var(--line);border-radius:12px;
     font-family:inherit;font-size:17px;background:#fff;color:var(--ink);}
-  input[type=text]:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-soft);}
+  textarea{min-height:150px;resize:vertical;line-height:1.5;}
+  input[type=text]:focus,textarea:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-soft);}
   .hint{color:var(--muted);font-size:15px;line-height:1.5;margin:14px 0 0;}
 
   .btn{border:none;cursor:pointer;font-family:inherit;font-weight:700;font-size:17px;
@@ -39,16 +40,27 @@
   .btn.sec:hover{background:#CFE6E0}
   .btn.ghost{background:transparent;color:var(--teal-dk);border:1px solid var(--line);}
   .btn.ghost:hover{background:#fff;border-color:var(--teal);}
+  .btn.auto{width:auto;padding:12px 18px;font-size:15px;}
 
-  .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}
+  .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;gap:10px;}
   .chip{display:inline-block;background:var(--teal-soft);color:var(--teal-dk);font-weight:700;
     font-size:14px;padding:8px 16px;border-radius:99px;}
-  .homelink{color:var(--teal-dk);font-weight:600;text-decoration:underline;font-size:16px;cursor:pointer;background:none;border:none;font-family:inherit;}
+  .homelink{color:var(--teal-dk);font-weight:600;text-decoration:underline;font-size:16px;cursor:pointer;background:none;border:none;font-family:inherit;padding:0;}
 
   .foot{color:var(--muted);font-size:14px;text-align:center;margin-top:34px;line-height:1.5;}
 
   .hide{display:none !important}
   .center{text-align:center}
+
+  /* ---- option cards (hub) ---- */
+  .opt-card{display:flex;align-items:center;gap:16px;background:#fff;border:1px solid var(--line);
+    border-radius:18px;padding:20px;margin-top:14px;cursor:pointer;text-align:left;width:100%;
+    font-family:inherit;transition:.14s;box-shadow:0 2px 14px rgba(34,32,27,.04);}
+  .opt-card:hover{border-color:var(--teal);transform:translateY(-1px);}
+  .opt-card .ic{font-size:30px;width:46px;height:46px;flex-shrink:0;display:flex;align-items:center;
+    justify-content:center;background:var(--teal-soft);border-radius:12px;}
+  .opt-card .k{font-weight:700;font-size:18px;margin:0 0 3px;color:var(--ink);}
+  .opt-card .d{color:var(--muted);font-size:14px;margin:0;line-height:1.4;}
 
   /* ---- progress ---- */
   .prog{display:flex;align-items:center;gap:8px;margin:2px 0 2px;}
@@ -82,6 +94,46 @@
   .barrow{margin:12px 0;}
   .barrow .top{display:flex;justify-content:space-between;font-size:15px;font-weight:600;}
   .barrow .top .pct{color:var(--muted);font-weight:600;}
+  .status{font-size:14px;margin-top:12px;min-height:20px;color:var(--muted);}
+  .status.err{color:var(--bad);}
+
+  /* ---- drop zone ---- */
+  .drop{border:2px dashed var(--teal);background:var(--teal-soft);border-radius:16px;
+    padding:30px;text-align:center;cursor:pointer;transition:.12s;}
+  .drop:hover{background:#CFE6E0}
+  .drop.drag{background:#BFE0D8}
+
+  /* ---- mistake review ---- */
+  .mis{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:14px;}
+  .mis .meta{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:0 0 8px;}
+  .mis .q{font-family:'Fraunces',serif;font-size:19px;line-height:1.3;margin:0 0 12px;}
+  .mis .ans{font-size:15px;margin:5px 0;padding:9px 12px;border-radius:10px;}
+  .mis .ans.wrong{background:#F6E3DD;color:#8a3b28;}
+  .mis .ans.right{background:#E4F1EA;color:#215c40;}
+  .mis .ex{font-size:14px;color:var(--muted);margin:10px 0 0;line-height:1.45;}
+  .empty{text-align:center;color:var(--muted);padding:30px 0;}
+
+  /* =========== SPACE WAVES GAME =========== */
+  #stage{position:relative;width:100%;height:440px;border-radius:18px;overflow:hidden;
+    background:#0a0a1f;border:1px solid #1e1e3a;}
+  #cv{display:block;width:100%;height:100%;touch-action:none;}
+  .hud{position:absolute;top:12px;left:14px;right:14px;display:flex;justify-content:space-between;
+    gap:8px;pointer-events:none;font-weight:700;font-size:14px;}
+  .hud .pill{background:rgba(10,10,31,.7);border:1px solid #33335c;color:#cfe6ff;
+    border-radius:99px;padding:6px 13px;backdrop-filter:blur(2px);}
+  .hud .dist{color:#7ef0d0;}
+  .g-over{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;text-align:center;padding:22px;background:rgba(5,5,20,.82);color:#fff;}
+  .g-over h2{font-family:'Fraunces',serif;font-size:28px;margin:0 0 8px;color:#fff;}
+  .g-over p{color:#c7c7e0;max-width:460px;margin:0 0 18px;line-height:1.5;font-size:15px;}
+  .g-over .btn{width:auto;min-width:200px;}
+  .g-over .row2{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
+  .g-q{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:18px;
+    background:rgba(5,5,20,.86);}
+  .g-qcard{background:#fff;border-radius:18px;padding:24px;max-width:520px;width:100%;
+    box-shadow:0 16px 50px rgba(0,0,0,.5);}
+  .hint-tap{position:absolute;bottom:14px;left:0;right:0;text-align:center;color:#8a8ac0;
+    font-size:13px;pointer-events:none;}
 </style>
 </head>
 <body>
@@ -101,6 +153,7 @@
       <p class="hint">The discovery session mixes math, reading, and puzzle games so it sees how
         your child focuses across different kinds of thinking.</p>
       <button class="btn" id="startBtn" style="margin-top:20px">Begin discovery session</button>
+      <div id="returning" class="hide" style="margin-top:18px"></div>
     </div>
 
     <p class="foot">Prototype · data saved only in this browser · not a diagnostic tool.</p>
@@ -134,18 +187,16 @@
     </div>
   </section>
 
-  <!-- =============== SCREEN 4 · QUESTION =============== -->
+  <!-- =============== SCREEN 4 · DISCOVERY QUESTION =============== -->
   <section id="screen-q" class="hide">
     <div class="topbar">
       <span class="chip">Discovery</span>
       <button class="homelink" data-home>home</button>
     </div>
-
     <div class="prog" style="margin-top:16px">
       <div class="blocks" id="progBlocks"></div>
       <span class="lbl" id="progLbl">Block 1 of 3</span>
     </div>
-
     <div class="card">
       <p class="qtag" id="qtag">Pattern game</p>
       <p class="qtext" id="qtext"></p>
@@ -160,210 +211,288 @@
       <span class="chip">Profile</span>
       <button class="homelink" data-home>home</button>
     </div>
-
     <h1 id="resTitle" style="font-size:32px;margin-top:16px">All done!</h1>
     <p class="lead" id="resLead"></p>
-
     <div class="card">
       <h2 style="font-size:20px">How each kind of thinking went</h2>
       <div id="domainBars"></div>
     </div>
-
     <div class="card">
       <h2 style="font-size:20px">What the session noticed</h2>
       <div id="insights"></div>
     </div>
+    <button class="btn" id="toHubBtn" style="margin-top:22px">See what's next →</button>
+    <p class="foot">This profile is built from a short game — it is <b>not</b> a diagnosis and shows
+      no clinical label. Saved in this browser as <b id="savedAs"></b>.</p>
+  </section>
 
-    <button class="btn" id="againBtn" style="margin-top:22px">Start a new discovery session</button>
-    <p class="foot">This is a prototype profile built from a short game — it is <b>not</b> a
-      diagnosis and shows no clinical label. Data is saved only in this browser.</p>
+  <!-- =============== SCREEN 6 · HUB / OPTIONS =============== -->
+  <section id="screen-hub" class="hide">
+    <div class="topbar">
+      <span class="chip" id="hubChip">Home</span>
+      <button class="homelink" id="switchChild">switch child</button>
+    </div>
+    <h1 id="hubTitle" style="font-size:30px;margin-top:14px">What next?</h1>
+    <p class="lead">Turn anything into a Space Waves game, or run discovery again.</p>
+
+    <button class="opt-card" id="optDiscovery">
+      <span class="ic">🧠</span>
+      <span><span class="k">New discovery session</span>
+        <span class="d">Re-measure how this child is thinking today.</span></span>
+    </button>
+    <button class="opt-card" id="optText">
+      <span class="ic">📝</span>
+      <span><span class="k">Type or paste text → game</span>
+        <span class="d">Notes, a paragraph, facts to learn. We turn it into questions.</span></span>
+    </button>
+    <button class="opt-card" id="optPhoto">
+      <span class="ic">📷</span>
+      <span><span class="k">Photograph a page → game</span>
+        <span class="d">Snap a textbook page. The AI reads it and builds new questions.</span></span>
+    </button>
+    <button class="opt-card" id="optReview">
+      <span class="ic">🚩</span>
+      <span><span class="k">Review mistakes <span id="misCount" class="muted"></span></span>
+        <span class="d">Every wrong answer from every game, saved to learn from.</span></span>
+    </button>
+  </section>
+
+  <!-- =============== SCREEN 7 · INPUT TEXT =============== -->
+  <section id="screen-text" class="hide">
+    <div class="topbar">
+      <span class="chip">Build a game</span>
+      <button class="homelink" data-hub>← options</button>
+    </div>
+    <h1 style="font-size:28px;margin-top:14px">Turn text into a game</h1>
+    <div class="card">
+      <label for="matText">Paste what you want to learn</label>
+      <textarea id="matText" placeholder="Paste notes, a paragraph, or facts here…"></textarea>
+      <button class="btn" id="buildText" style="margin-top:16px">Build my Space Waves game</button>
+      <div class="status" id="textStatus"></div>
+    </div>
+  </section>
+
+  <!-- =============== SCREEN 8 · INPUT PHOTO =============== -->
+  <section id="screen-photo" class="hide">
+    <div class="topbar">
+      <span class="chip">Build a game</span>
+      <button class="homelink" data-hub>← options</button>
+    </div>
+    <h1 style="font-size:28px;margin-top:14px">Photograph a page</h1>
+    <div class="card">
+      <div class="drop" id="drop">
+        <div style="font-size:38px">📷</div>
+        <div style="font-weight:700;color:var(--teal-dk);margin-top:8px">Tap to add a photo of the page</div>
+        <div class="muted" style="font-size:13px">or drag an image here</div>
+      </div>
+      <input id="file" type="file" accept="image/*" class="hide">
+      <img id="preview" class="hide" style="width:100%;border-radius:12px;margin-top:14px;border:1px solid var(--line)">
+      <button class="btn" id="buildPhoto" style="margin-top:16px">Build my Space Waves game</button>
+      <div class="status" id="photoStatus"></div>
+    </div>
+  </section>
+
+  <!-- =============== SCREEN 9 · SPACE WAVES GAME =============== -->
+  <section id="screen-game" class="hide">
+    <div class="topbar">
+      <span class="chip" id="gameTopic">Space Waves</span>
+      <button class="homelink" data-hub>quit</button>
+    </div>
+    <div id="stage">
+      <canvas id="cv"></canvas>
+      <div class="hud">
+        <span class="pill dist">📏 <span id="hudDist">0</span> m</span>
+        <span class="pill">Q <span id="hudQ">0</span>/<span id="hudQT">0</span></span>
+      </div>
+      <div class="hint-tap" id="hintTap">Hold anywhere to fly up · release to fall</div>
+
+      <!-- question overlay -->
+      <div class="g-q hide" id="gq">
+        <div class="g-qcard">
+          <p class="qtag">Checkpoint · <span id="gqDist">100</span> m · answer to pass</p>
+          <p class="qtext" id="gqText"></p>
+          <div class="opts" id="gqOpts"></div>
+          <p class="fb" id="gqFb"></p>
+        </div>
+      </div>
+
+      <!-- overlays: start / crash / dead / win -->
+      <div class="g-over" id="gOver">
+        <h2 id="goTitle">Space Waves</h2>
+        <p id="goSub"></p>
+        <div class="row2" id="goBtns"></div>
+      </div>
+    </div>
+    <p class="muted" style="font-size:13px;margin-top:10px;text-align:center">
+      A question every 100 m. Crash into an obstacle and you can respawn — but a
+      <b>wrong answer ends the run</b> and is saved to your mistakes.
+    </p>
+  </section>
+
+  <!-- =============== SCREEN 10 · MISTAKE REVIEW =============== -->
+  <section id="screen-review" class="hide">
+    <div class="topbar">
+      <span class="chip">Mistakes</span>
+      <button class="homelink" data-hub>← options</button>
+    </div>
+    <h1 style="font-size:28px;margin-top:14px" id="revTitle">Mistakes to review</h1>
+    <p class="lead" id="revLead"></p>
+    <div id="revList"></div>
+    <button class="btn ghost" id="clearMis" style="margin-top:20px">Clear this child's mistakes</button>
   </section>
 
 </div>
 
 <script>
 /* =====================================================================
-   ATTUNE — discovery session
-   Asks for the child's name, then runs 3 blocks of 5 questions each.
-   Every block mixes PATTERNS, ENGLISH and MATHS, and the questions get
-   harder with each step. We time and score every answer, then build a
-   lightweight (non-diagnostic) profile saved in the browser.
+   ATTUNE — discovery + Space Waves
    ===================================================================== */
-
 const $ = id => document.getElementById(id);
-const show = id => {
-  ['screen-start','screen-intro','screen-break','screen-q','screen-result']
-    .forEach(s => $(s).classList.toggle('hide', s !== id));
+const SCREENS = ['screen-start','screen-intro','screen-break','screen-q','screen-result',
+                 'screen-hub','screen-text','screen-photo','screen-game','screen-review'];
+function show(id){
+  SCREENS.forEach(s => $(s).classList.toggle('hide', s !== id));
+  if (id !== 'screen-game') stopGame();
   window.scrollTo(0,0);
-};
+}
 
-/* ---------- the question bank ----------
-   3 blocks × 5 questions. In every block the domains are mixed and the
-   difficulty (d) rises 1→5. Block 2 is harder than block 1, block 3
-   hardest of all. domain ∈ pattern | english | maths.               */
-const BLOCKS = [
-  /* ---- Block 1 · warm up ---- */
-  [
-    {domain:'pattern', d:1, q:'What comes next?   ⭐ 🌙 ⭐ 🌙 ⭐ ___',
-      options:['🌙','⭐','☀️','⭐🌙'], answer:0, why:'It goes star, moon, star, moon…'},
-    {domain:'english', d:2, q:'Which word rhymes with “cat”?',
-      options:['dog','hat','cup','car'], answer:1, why:'“Hat” ends with the same -at sound.'},
-    {domain:'maths', d:3, q:'3 + 4 = ?',
-      options:['6','7','8','5'], answer:1, why:'3 and 4 make 7.'},
-    {domain:'pattern', d:4, q:'What number is next?   5, 10, 15, 20, ___',
-      options:['22','25','30','24'], answer:1, why:'It counts up by 5 each time.'},
-    {domain:'english', d:5, q:'What is the opposite of “happy”?',
-      options:['glad','sad','big','fast'], answer:1, why:'“Sad” is the opposite of happy.'},
-  ],
-  /* ---- Block 2 · warming up ---- */
-  [
-    {domain:'maths', d:1, q:'12 − 5 = ?',
-      options:['6','7','8','5'], answer:1, why:'Take 5 away from 12 to get 7.'},
-    {domain:'pattern', d:2, q:'Finish the pattern:   2, 4, 8, 16, ___',
-      options:['20','24','32','18'], answer:2, why:'Each number doubles: 16 × 2 = 32.'},
-    {domain:'english', d:3, q:'Which one is a complete sentence?',
-      options:['The dog.','Running fast.','The dog ran fast.','Fast the dog.'], answer:2,
-      why:'It has a naming part and a doing part.'},
-    {domain:'maths', d:4, q:'What is 6 × 7?',
-      options:['42','36','48','40'], answer:0, why:'Six sevens make 42.'},
-    {domain:'pattern', d:5, q:'Which is the odd one out?   triangle, square, circle, cube',
-      options:['triangle','square','circle','cube'], answer:3,
-      why:'A cube is 3-D — the others are flat shapes.'},
-  ],
-  /* ---- Block 3 · the trickier games ---- */
-  [
-    {domain:'english', d:1, q:'Choose the correct word:   “She ran ___ than her friend.”',
-      options:['fast','faster','fastest','more fast'], answer:1,
-      why:'Comparing two people uses “faster”.'},
-    {domain:'maths', d:2, q:'What is half of 48?',
-      options:['24','22','26','28'], answer:0, why:'48 split into two equal parts is 24.'},
-    {domain:'pattern', d:3, q:'What comes next?   1, 1, 2, 3, 5, ___',
-      options:['6','7','8','9'], answer:2, why:'Add the two before it: 3 + 5 = 8.'},
-    {domain:'maths', d:4, q:'A pack has 6 pencils. How many pencils in 4 packs?',
-      options:['20','24','18','28'], answer:1, why:'4 packs × 6 pencils = 24.'},
-    {domain:'english', d:5, q:'Which sentence is punctuated correctly?',
-      options:['wheres my book','Where’s my book?','Where’s my book','wheres my book?'], answer:1,
-      why:'It needs the apostrophe in “Where’s” and a question mark.'},
-  ],
-];
-
-const DOMAIN_META = {
-  pattern: {label:'Pattern game', key:'Patterns',    icon:'🧩'},
-  english: {label:'Word game',    key:'English',     icon:'📖'},
-  maths:   {label:'Number game',  key:'Mathematics', icon:'🔢'},
-};
+/* ---------- per-child storage ---------- */
+const keyOf = name => 'attune_' + name.trim().toLowerCase().replace(/[^a-z0-9]+/g,'_');
+function registerChild(name){
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem('attune_children')||'[]'); } catch(e){}
+  const k = keyOf(name);
+  if (!list.some(c => c.key === k)) list.push({key:k, name});
+  else list = list.map(c => c.key === k ? {key:k, name} : c);
+  localStorage.setItem('attune_children', JSON.stringify(list));
+  localStorage.setItem('attune_last', name);
+}
+function children(){
+  try { return JSON.parse(localStorage.getItem('attune_children')||'[]'); } catch(e){ return []; }
+}
+function loadMistakes(){
+  try { return JSON.parse(localStorage.getItem(childKey+'_mistakes')||'[]'); } catch(e){ return []; }
+}
+function saveMistake(m){
+  const list = loadMistakes(); list.unshift(m);
+  localStorage.setItem(childKey+'_mistakes', JSON.stringify(list));
+}
 
 /* ---------- session state ---------- */
-let childName = '';
-let bi = 0, qi = 0;          // block index, question index
-let askedAt = 0;             // timestamp the current question appeared
-let locked = false;          // stop double answers
-const results = [];          // {domain, d, correct, ms, block}
+let childName = '', childKey = '';
+let bi = 0, qi = 0, askedAt = 0, locked = false;
+const results = [];
 
-/* ---------- screen 1: start ---------- */
+/* ---------- discovery question bank (3 blocks × 5, mixed + ramping) ---------- */
+const BLOCKS = [
+  [
+    {domain:'pattern', d:1, q:'What comes next?   ⭐ 🌙 ⭐ 🌙 ⭐ ___', options:['🌙','⭐','☀️','⭐🌙'], answer:0, why:'It goes star, moon, star, moon…'},
+    {domain:'english', d:2, q:'Which word rhymes with “cat”?', options:['dog','hat','cup','car'], answer:1, why:'“Hat” ends with the same -at sound.'},
+    {domain:'maths', d:3, q:'3 + 4 = ?', options:['6','7','8','5'], answer:1, why:'3 and 4 make 7.'},
+    {domain:'pattern', d:4, q:'What number is next?   5, 10, 15, 20, ___', options:['22','25','30','24'], answer:1, why:'It counts up by 5 each time.'},
+    {domain:'english', d:5, q:'What is the opposite of “happy”?', options:['glad','sad','big','fast'], answer:1, why:'“Sad” is the opposite of happy.'},
+  ],
+  [
+    {domain:'maths', d:1, q:'12 − 5 = ?', options:['6','7','8','5'], answer:1, why:'Take 5 away from 12 to get 7.'},
+    {domain:'pattern', d:2, q:'Finish the pattern:   2, 4, 8, 16, ___', options:['20','24','32','18'], answer:2, why:'Each number doubles: 16 × 2 = 32.'},
+    {domain:'english', d:3, q:'Which one is a complete sentence?', options:['The dog.','Running fast.','The dog ran fast.','Fast the dog.'], answer:2, why:'It has a naming part and a doing part.'},
+    {domain:'maths', d:4, q:'What is 6 × 7?', options:['42','36','48','40'], answer:0, why:'Six sevens make 42.'},
+    {domain:'pattern', d:5, q:'Which is the odd one out?   triangle, square, circle, cube', options:['triangle','square','circle','cube'], answer:3, why:'A cube is 3-D — the others are flat shapes.'},
+  ],
+  [
+    {domain:'english', d:1, q:'Choose the correct word:   “She ran ___ than her friend.”', options:['fast','faster','fastest','more fast'], answer:1, why:'Comparing two people uses “faster”.'},
+    {domain:'maths', d:2, q:'What is half of 48?', options:['24','22','26','28'], answer:0, why:'48 split into two equal parts is 24.'},
+    {domain:'pattern', d:3, q:'What comes next?   1, 1, 2, 3, 5, ___', options:['6','7','8','9'], answer:2, why:'Add the two before it: 3 + 5 = 8.'},
+    {domain:'maths', d:4, q:'A pack has 6 pencils. How many pencils in 4 packs?', options:['20','24','18','28'], answer:1, why:'4 packs × 6 pencils = 24.'},
+    {domain:'english', d:5, q:'Which sentence is punctuated correctly?', options:['wheres my book','Where’s my book?','Where’s my book','wheres my book?'], answer:1, why:'It needs the apostrophe in “Where’s” and a question mark.'},
+  ],
+];
+const DOMAIN_META = {
+  pattern:{label:'Pattern game', key:'Patterns', icon:'🧩'},
+  english:{label:'Word game', key:'English', icon:'📖'},
+  maths:{label:'Number game', key:'Mathematics', icon:'🔢'},
+};
+
+/* ---------- start screen ---------- */
+function refreshReturning(){
+  const list = children();
+  const box = $('returning');
+  if (!list.length){ box.classList.add('hide'); return; }
+  box.classList.remove('hide');
+  box.innerHTML = '<p class="hint" style="margin:0 0 8px">Returning? Pick a saved child:</p>';
+  const row = document.createElement('div'); row.className = 'opts';
+  list.forEach(c => {
+    const b = document.createElement('button');
+    b.className = 'opt'; b.textContent = c.name;
+    b.onclick = () => { childName = c.name; childKey = c.key; goHub(); };
+    row.appendChild(b);
+  });
+  box.appendChild(row);
+}
 $('name').addEventListener('keydown', e => { if (e.key === 'Enter') $('startBtn').click(); });
 $('startBtn').onclick = () => {
   const n = $('name').value.trim();
   childName = n ? n.charAt(0).toUpperCase() + n.slice(1) : 'your child';
+  childKey = keyOf(childName);
   $('introTitle').textContent = `Let's see how ${childName}'s brain works best`;
   $('introSub').textContent =
-    `A few quick games. No grades, no pressure. About 5 minutes. ${childName} just plays — ` +
-    `Attune watches how they focus.`;
+    `A few quick games. No grades, no pressure. About 5 minutes. ${childName} just plays — Attune watches how they focus.`;
   show('screen-intro');
 };
 
-/* ---------- screen 2: intro ---------- */
+/* ---------- discovery flow ---------- */
 $('readyBtn').onclick = () => { bi = 0; qi = 0; results.length = 0; startQuestion(); };
-
-/* ---------- block break ---------- */
-$('breakBtn').onclick = () => { startQuestion(); };
-
-/* ---------- home links ---------- */
+$('breakBtn').onclick = () => startQuestion();
 document.querySelectorAll('[data-home]').forEach(b => b.onclick = () => show('screen-start'));
+document.querySelectorAll('[data-hub]').forEach(b => b.onclick = () => goHub());
 
-/* ---------- progress bar ---------- */
 function drawProgress(){
   const box = $('progBlocks'); box.innerHTML = '';
   for (let b = 0; b < BLOCKS.length; b++){
     const seg = document.createElement('div'); seg.className = 'seg';
     const fill = document.createElement('i');
-    let pct = 0;
-    if (b < bi) pct = 100;
-    else if (b === bi) pct = (qi / BLOCKS[b].length) * 100;
-    fill.style.width = pct + '%';
+    fill.style.width = (b < bi ? 100 : b === bi ? (qi/BLOCKS[b].length)*100 : 0) + '%';
     seg.appendChild(fill); box.appendChild(seg);
   }
   $('progLbl').textContent = `Block ${bi+1} of ${BLOCKS.length}`;
 }
-
-/* ---------- ask a question ---------- */
 function startQuestion(){
-  const q = BLOCKS[bi][qi];
-  const meta = DOMAIN_META[q.domain];
+  const q = BLOCKS[bi][qi], meta = DOMAIN_META[q.domain];
   $('qtag').textContent = `${meta.label} · question ${qi+1} of 5`;
   $('qtext').textContent = q.q;
   $('fb').textContent = ''; $('fb').className = 'fb';
   drawProgress();
-
   const box = $('opts'); box.innerHTML = '';
   q.options.forEach((opt, idx) => {
     const b = document.createElement('button');
     b.className = 'opt'; b.textContent = opt;
-    b.onclick = () => answer(idx, b, box, q);
+    b.onclick = () => answerDiscovery(idx, b, box, q);
     box.appendChild(b);
   });
-
-  locked = false;
-  askedAt = Date.now();
+  locked = false; askedAt = Date.now();
   show('screen-q');
 }
-
-function answer(idx, btn, box, q){
-  if (locked) return;
-  locked = true;
-  const ms = Date.now() - askedAt;
-  const correct = idx === q.answer;
-
+function answerDiscovery(idx, btn, box, q){
+  if (locked) return; locked = true;
+  const ms = Date.now() - askedAt, correct = idx === q.answer;
   [...box.children].forEach(c => c.disabled = true);
   btn.classList.add(correct ? 'right' : 'wrong');
   if (!correct) box.children[q.answer].classList.add('right');
-
   results.push({domain:q.domain, d:q.d, correct, ms, block:bi});
-
-  const fb = $('fb');
-  fb.className = 'fb ' + (correct ? 'good' : 'bad');
+  const fb = $('fb'); fb.className = 'fb ' + (correct ? 'good' : 'bad');
   fb.textContent = (correct ? 'Nice! ' : 'Good try. ') + q.why;
-
-  // fill this question's slice of the progress bar
-  qi_advance_preview();
-
-  setTimeout(next, correct ? 1100 : 1900);
-}
-
-// briefly show the progress moving before we swap screens
-function qi_advance_preview(){
   const segs = $('progBlocks').children;
   if (segs[bi]) segs[bi].firstChild.style.width = ((qi+1)/BLOCKS[bi].length)*100 + '%';
+  setTimeout(nextDiscovery, correct ? 1100 : 1900);
 }
-
-function next(){
+function nextDiscovery(){
   qi++;
-  if (qi < BLOCKS[bi].length){
-    startQuestion();
-    return;
-  }
-  // finished a block
+  if (qi < BLOCKS[bi].length){ startQuestion(); return; }
   bi++; qi = 0;
-  if (bi < BLOCKS.length){
-    showBreak();
-  } else {
-    finish();
-  }
+  if (bi < BLOCKS.length) showBreak(); else finishDiscovery();
 }
-
 function showBreak(){
-  const done = bi;               // blocks completed so far
-  const icons = ['🌱','🚀'];
+  const done = bi, icons = ['🌱','🚀'];
   $('breakIcon').textContent = icons[done-1] || '✅';
   $('breakTitle').textContent = `Block ${done} done — nice work, ${childName}!`;
   $('breakSub').textContent = bi === 1
@@ -373,92 +502,431 @@ function showBreak(){
   show('screen-break');
 }
 
-/* =====================================================================
-   BUILD THE PROFILE  (honest, lightweight, non-diagnostic)
-   ===================================================================== */
-function finish(){
-  const total = results.length;
-  const correct = results.filter(r => r.correct).length;
-
-  // accuracy per domain
-  const dom = {};
-  for (const key of ['pattern','english','maths']) dom[key] = {c:0,t:0};
+/* ---------- build + SAVE profile ---------- */
+function finishDiscovery(){
+  const total = results.length, correct = results.filter(r => r.correct).length;
+  const dom = {pattern:{c:0,t:0}, english:{c:0,t:0}, maths:{c:0,t:0}};
   results.forEach(r => { dom[r.domain].t++; if (r.correct) dom[r.domain].c++; });
-
-  // pace
-  const avgMs = results.reduce((a,r)=>a+r.ms,0) / total;
-  const avgS = avgMs/1000;
+  const avgS = (results.reduce((a,r)=>a+r.ms,0)/total)/1000;
   let pace, paceWhy;
-  if (avgS < 6)      { pace = 'Quick responder';   paceWhy = `Answered fast — about ${avgS.toFixed(1)}s per question. Watch that speed doesn't outrun accuracy.`; }
-  else if (avgS <= 13){ pace = 'Steady pace';       paceWhy = `A calm, even rhythm — about ${avgS.toFixed(1)}s per question.`; }
-  else                { pace = 'Takes their time';  paceWhy = `Thought carefully — about ${avgS.toFixed(0)}s per question. Values getting it right over speed.`; }
-
-  // attention window: accuracy in the first block vs the last block
-  const acc = b => {
-    const rs = results.filter(r => r.block === b);
-    return rs.length ? rs.filter(r=>r.correct).length / rs.length : 0;
-  };
+  if (avgS < 6){ pace='Quick responder'; paceWhy=`Answered fast — about ${avgS.toFixed(1)}s per question. Watch that speed doesn't outrun accuracy.`; }
+  else if (avgS <= 13){ pace='Steady pace'; paceWhy=`A calm, even rhythm — about ${avgS.toFixed(1)}s per question.`; }
+  else { pace='Takes their time'; paceWhy=`Thought carefully — about ${avgS.toFixed(0)}s per question. Values getting it right over speed.`; }
+  const acc = b => { const rs = results.filter(r=>r.block===b); return rs.length ? rs.filter(r=>r.correct).length/rs.length : 0; };
   const first = acc(0), last = acc(BLOCKS.length-1);
   let attn, attnWhy;
-  if (last >= first - 0.001){ attn = 'Focus held strong'; attnWhy = 'Stayed just as accurate as the games got harder and longer — a wide attention window.'; }
-  else if (first - last <= 0.2){ attn = 'Focus mostly held'; attnWhy = 'A small dip on the hardest block — normal as difficulty climbs.'; }
-  else { attn = 'Focus faded late'; attnWhy = 'Accuracy dropped on the later, harder block — may focus best in shorter bursts.'; }
+  if (last >= first - 0.001){ attn='Focus held strong'; attnWhy='Stayed just as accurate as the games got harder and longer — a wide attention window.'; }
+  else if (first-last <= 0.2){ attn='Focus mostly held'; attnWhy='A small dip on the hardest block — normal as difficulty climbs.'; }
+  else { attn='Focus faded late'; attnWhy='Accuracy dropped on the later, harder block — may focus best in shorter bursts.'; }
+  let best='pattern', bestAcc=-1;
+  for (const k of ['pattern','english','maths']){ const a = dom[k].t?dom[k].c/dom[k].t:0; if (a>bestAcc){bestAcc=a;best=k;} }
 
-  // strongest thinking style
-  let best = 'pattern', bestAcc = -1;
-  for (const key of ['pattern','english','maths']){
-    const a = dom[key].t ? dom[key].c/dom[key].t : 0;
-    if (a > bestAcc){ bestAcc = a; best = key; }
-  }
+  const profile = {name:childName, when:new Date().toISOString(), score:{correct,total},
+    domains:dom, avgSeconds:+avgS.toFixed(1), strongest:best, pace, attention:attn};
+  registerChild(childName);
+  try { localStorage.setItem(childKey+'_profile', JSON.stringify(profile)); } catch(e){}
 
-  const profile = {
-    name: childName, when: new Date().toISOString(),
-    score: {correct, total},
-    domains: dom, avgSeconds: +avgS.toFixed(1),
-    strongest: best, pace, attention: attn,
-  };
-  try { localStorage.setItem('attune_profile_' + childName.toLowerCase(), JSON.stringify(profile)); } catch(e){}
-
-  renderResult(profile, {paceWhy, attnWhy, bestLabel: DOMAIN_META[best].key});
-}
-
-function renderResult(p, extra){
-  $('resTitle').textContent = `${p.name}'s discovery profile`;
-  $('resLead').textContent =
-    `${p.name} answered ${p.score.correct} of ${p.score.total} across patterns, reading and number puzzles. ` +
-    `Here's what the games suggest about how ${p.name} likes to think.`;
-
-  // domain bars
-  const box = $('domainBars'); box.innerHTML = '';
-  for (const key of ['pattern','english','maths']){
-    const d = p.domains[key];
-    const pct = d.t ? Math.round(d.c/d.t*100) : 0;
+  // render
+  $('resTitle').textContent = `${childName}'s discovery profile`;
+  $('resLead').textContent = `${childName} answered ${correct} of ${total} across patterns, reading and number puzzles. Here's what the games suggest about how ${childName} likes to think.`;
+  $('savedAs').textContent = childName;
+  const bars = $('domainBars'); bars.innerHTML = '';
+  for (const k of ['pattern','english','maths']){
+    const d = dom[k], pct = d.t?Math.round(d.c/d.t*100):0;
     const row = document.createElement('div'); row.className = 'barrow';
-    row.innerHTML =
-      `<div class="top"><span>${DOMAIN_META[key].icon} ${DOMAIN_META[key].key}</span>`+
-      `<span class="pct">${d.c}/${d.t}</span></div>`+
-      `<div class="bar"><i style="width:${pct}%"></i></div>`;
-    box.appendChild(row);
+    row.innerHTML = `<div class="top"><span>${DOMAIN_META[k].icon} ${DOMAIN_META[k].key}</span><span class="pct">${d.c}/${d.t}</span></div><div class="bar"><i style="width:${pct}%"></i></div>`;
+    bars.appendChild(row);
   }
-
-  // insight cards
   const ins = $('insights'); ins.innerHTML = '';
-  const rows = [
-    ['💡','Strongest thinking style', `${p.name} did best on ${extra.bestLabel.toLowerCase()} questions today.`],
-    ['⏱️','Pace', extra.paceWhy],
-    ['🎯','Attention window', extra.attnWhy],
-  ];
-  rows.forEach(([ic,k,v]) => {
+  [['💡','Strongest thinking style',`${childName} did best on ${DOMAIN_META[best].key.toLowerCase()} questions today.`],
+   ['⏱️','Pace',paceWhy],['🎯','Attention window',attnWhy]].forEach(([ic,k,v]) => {
     const el = document.createElement('div'); el.className = 'stat';
     el.innerHTML = `<div class="ic">${ic}</div><div><p class="k">${k}</p><p class="v">${v}</p></div>`;
     ins.appendChild(el);
   });
-
   show('screen-result');
 }
 
-/* ---------- start over ---------- */
-$('againBtn').onclick = () => { $('name').value = ''; show('screen-start'); };
+/* ---------- HUB ---------- */
+$('toHubBtn').onclick = () => goHub();
+function goHub(){
+  $('hubChip').textContent = childName;
+  $('hubTitle').textContent = `What next, ${childName}?`;
+  const n = loadMistakes().length;
+  $('misCount').textContent = n ? `(${n})` : '';
+  show('screen-hub');
+}
+$('switchChild').onclick = () => { $('name').value=''; refreshReturning(); show('screen-start'); };
+$('optDiscovery').onclick = () => { bi=0; qi=0; results.length=0;
+  $('introTitle').textContent = `Let's see how ${childName}'s brain works best`;
+  $('introSub').textContent = `A few quick games. No grades, no pressure. About 5 minutes.`;
+  show('screen-intro'); };
+$('optText').onclick = () => { $('textStatus').textContent=''; show('screen-text'); };
+$('optPhoto').onclick = () => { $('photoStatus').textContent=''; show('screen-photo'); };
+$('optReview').onclick = () => renderReview();
+
+/* ---------- server key check + demo fallback ---------- */
+let KEY_SET = true;
+fetch('/api/health').then(r=>r.json()).then(h=>{ KEY_SET = !!h.key_set; }).catch(()=>{ KEY_SET=false; });
+const DEMO_QUIZ = {topic:'Demo · Our Solar System', questions:[
+  {prompt:'Which planet is closest to the Sun?', options:['Mercury','Venus','Earth','Mars'], answer:0, explain:'Mercury is the innermost planet.'},
+  {prompt:'What is the largest planet in our Solar System?', options:['Saturn','Jupiter','Neptune','Earth'], answer:1, explain:'Jupiter is the biggest by far.'},
+  {prompt:'Which planet is known as the Red Planet?', options:['Venus','Mars','Jupiter','Mercury'], answer:1, explain:'Iron oxide gives Mars its red colour.'},
+  {prompt:'What do we call a rock orbiting the Sun between Mars and Jupiter?', options:['Comet','Asteroid','Meteor','Moon'], answer:1, explain:'That region is the asteroid belt.'},
+  {prompt:'Which planet has the most visible rings?', options:['Uranus','Neptune','Saturn','Mars'], answer:2, explain:'Saturn’s rings are the brightest.'},
+  {prompt:'How long does Earth take to orbit the Sun once?', options:['1 day','1 month','1 year','10 years'], answer:2, explain:'One orbit is one year.'},
+]};
+
+/* ---------- text → game ---------- */
+$('buildText').onclick = async () => {
+  const text = $('matText').value.trim();
+  if (text.length < 30){ setStatus('textStatus','Paste at least a couple of sentences.', true); return; }
+  $('buildText').disabled = true; setStatus('textStatus','Reading it and writing questions… (~20s)');
+  try {
+    const res = await fetch('/api/quiz/text', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({text, n:8})});
+    if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail||'Request failed'); }
+    const quiz = await res.json();
+    if (!quiz.questions || !quiz.questions.length) throw new Error('No questions came back.');
+    launchGame(quiz);
+  } catch(e){ offerDemo('textStatus', e.message); }
+  finally { $('buildText').disabled = false; }
+};
+
+/* ---------- photo → game ---------- */
+let photo = null;
+$('drop').onclick = () => $('file').click();
+$('file').onchange = e => loadPhoto(e.target.files[0]);
+['dragenter','dragover'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.add('drag'); }));
+['dragleave','drop'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.remove('drag'); }));
+$('drop').addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) loadPhoto(f); });
+function loadPhoto(f){
+  if (!f || !f.type.startsWith('image/')){ setStatus('photoStatus','That file isn\'t an image.', true); return; }
+  photo = f; const r = new FileReader();
+  r.onload = () => { $('preview').src = r.result; $('preview').classList.remove('hide'); $('drop').classList.add('hide'); setStatus('photoStatus',''); };
+  r.readAsDataURL(f);
+}
+$('buildPhoto').onclick = async () => {
+  if (!photo){ setStatus('photoStatus','Add a photo first.', true); return; }
+  $('buildPhoto').disabled = true; setStatus('photoStatus','Reading the page and writing questions… (~20s)');
+  try {
+    const fd = new FormData(); fd.append('file', photo); fd.append('n','8');
+    const res = await fetch('/api/quiz/image', {method:'POST', body:fd});
+    if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail||'Request failed'); }
+    const quiz = await res.json();
+    if (!quiz.questions || !quiz.questions.length) throw new Error('No questions came back.');
+    launchGame(quiz);
+  } catch(e){ offerDemo('photoStatus', e.message); }
+  finally { $('buildPhoto').disabled = false; }
+};
+function setStatus(id, msg, err){ const s = $(id); s.textContent = msg; s.className = 'status' + (err?' err':''); }
+function offerDemo(statusId, msg){
+  const s = $(statusId);
+  s.className = 'status err';
+  s.innerHTML = `Couldn't build a game: ${msg}` +
+    (KEY_SET ? '' : ' — no OPENROUTER_API_KEY on the server (see README).') + ' ';
+  const b = document.createElement('button'); b.className='btn sec auto'; b.style.marginTop='10px';
+  b.textContent = '▶ Play a demo Space Waves game instead';
+  b.onclick = () => launchGame(DEMO_QUIZ);
+  s.appendChild(document.createElement('br')); s.appendChild(b);
+}
+
+/* =====================================================================
+   SPACE WAVES  — hold to fly up, release to fall. Question every 100 m.
+   Wrong answer = death (logged). Crash into an obstacle = respawn.
+   ===================================================================== */
+const cv = $('cv'), ctx = cv.getContext('2d');
+let GW = 640, GH = 440;
+const PX_PER_M = 6;            // horizontal pixels per metre
+const V_METRES = 0.16;         // metres advanced per frame (~100 m ≈ 10 s)
+let GAME = null;               // {topic, questions}
+let g = null;                  // live game state
+let rafId = 0;
+let holding = false;
+let stars = [];
+
+function resizeGame(){
+  const r = $('stage').getBoundingClientRect();
+  cv.width = Math.max(320, Math.floor(r.width));
+  cv.height = Math.floor(r.height);
+  GW = cv.width; GH = cv.height;
+}
+window.addEventListener('resize', () => { if (!$('screen-game').classList.contains('hide')) resizeGame(); });
+
+function launchGame(quiz){
+  GAME = quiz;
+  $('gameTopic').textContent = quiz.topic || 'Space Waves';
+  $('hudQT').textContent = quiz.questions.length;
+  show('screen-game');
+  resizeGame();
+  stars = Array.from({length:70}, () => ({x:Math.random()*GW, y:Math.random()*GH, z:Math.random()*.8+.2}));
+  newRun();
+  overlay('Space Waves', `Fly through ${quiz.questions.length*100} m of space. A question waits every 100 m. ` +
+    `Crash and you can respawn — but a wrong answer ends the run.`, [['Launch 🚀', beginRun]]);
+}
+
+function newRun(){
+  g = { dist:0, speed:V_METRES, nextQ:0, y:GH/2, vy:0, trail:[], obstacles:[],
+        lastObstacleM:0, grace:0, running:false, paused:true, awaitingQ:false };
+  $('hudDist').textContent = 0; $('hudQ').textContent = 0;
+}
+function beginRun(){
+  hideOverlay(); $('gq').classList.add('hide');
+  g.running = true; g.paused = false;
+  rafId = requestAnimationFrame(loop);
+}
+function stopGame(){ if (rafId) cancelAnimationFrame(rafId); rafId = 0; if (g) g.running = false; }
+
+/* controls */
+function down(e){ if (e && e.cancelable) e.preventDefault(); holding = true; }
+function up(){ holding = false; }
+cv.addEventListener('pointerdown', down);
+window.addEventListener('pointerup', up);
+window.addEventListener('keydown', e => { if ((e.code==='Space'||e.code==='ArrowUp') && !$('screen-game').classList.contains('hide')){ e.preventDefault(); holding = true; } });
+window.addEventListener('keyup', e => { if (e.code==='Space'||e.code==='ArrowUp') holding = false; });
+
+const PLAYER_X = () => Math.round(GW*0.26);
+
+function spawnObstacles(){
+  // add obstacles ahead until we cover the visible distance + buffer
+  const aheadM = g.dist + (GW/PX_PER_M) + 20;
+  const spacingM = 16;
+  while (g.lastObstacleM < aheadM){
+    g.lastObstacleM += spacingM;
+    // don't drop an obstacle right on a checkpoint (multiple of 100)
+    const nearCheckpoint = (g.lastObstacleM % 100) < 8 || (g.lastObstacleM % 100) > 92;
+    if (nearCheckpoint) continue;
+    const gapH = Math.max(120, 190 - g.dist*0.04);
+    const gapY = 60 + Math.random()*(GH-120-gapH);
+    g.obstacles.push({m:g.lastObstacleM, gapY, gapH, w:20});
+  }
+  g.obstacles = g.obstacles.filter(o => (o.m - g.dist)*PX_PER_M > -60);
+}
+
+function loop(){
+  if (!g.running || g.paused){ return; }
+  update();
+  draw();
+  rafId = requestAnimationFrame(loop);
+}
+
+function update(){
+  g.dist += g.speed;
+  $('hudDist').textContent = Math.floor(g.dist);
+
+  // physics: hold = thrust up, else gravity down
+  g.vy += holding ? -0.42 : 0.42;
+  g.vy = Math.max(-6.5, Math.min(6.5, g.vy));
+  g.y += g.vy;
+
+  // trail
+  g.trail.push({x:PLAYER_X(), y:g.y}); if (g.trail.length>26) g.trail.shift();
+
+  if (g.grace > 0) g.grace--;
+
+  // edges kill (unless grace)
+  if ((g.y < 10 || g.y > GH-10) && g.grace<=0){ crash(); return; }
+  g.y = Math.max(10, Math.min(GH-10, g.y));
+
+  spawnObstacles();
+
+  // collision
+  if (g.grace<=0){
+    const px = PLAYER_X();
+    for (const o of g.obstacles){
+      const ox = px + (o.m - g.dist)*PX_PER_M;
+      if (ox < px+12 && ox+o.w > px-12){
+        if (g.y - 9 < o.gapY || g.y + 9 > o.gapY + o.gapH){ crash(); return; }
+      }
+    }
+  }
+
+  // checkpoint question every 100 m
+  if (g.nextQ < GAME.questions.length){
+    const target = (g.nextQ+1)*100;
+    if (g.dist >= target){ askGameQuestion(); return; }
+  } else {
+    win(); return;
+  }
+
+  // drift stars
+  stars.forEach(s => { s.x -= g.speed*PX_PER_M*s.z*0.6; if (s.x < 0){ s.x = GW; s.y = Math.random()*GH; } });
+}
+
+function draw(){
+  ctx.fillStyle = '#0a0a1f'; ctx.fillRect(0,0,GW,GH);
+  // stars
+  stars.forEach(s => { ctx.globalAlpha = s.z; ctx.fillStyle = '#cfe0ff';
+    ctx.fillRect(s.x, s.y, 2, 2); });
+  ctx.globalAlpha = 1;
+
+  // obstacles (neon gates)
+  const px = PLAYER_X();
+  g.obstacles.forEach(o => {
+    const x = px + (o.m - g.dist)*PX_PER_M;
+    if (x < -30 || x > GW+30) return;
+    ctx.fillStyle = '#ff4d8d'; ctx.shadowColor = '#ff4d8d'; ctx.shadowBlur = 12;
+    ctx.fillRect(x, 0, o.w, o.gapY);
+    ctx.fillRect(x, o.gapY+o.gapH, o.w, GH-(o.gapY+o.gapH));
+    ctx.shadowBlur = 0;
+  });
+
+  // checkpoint marker line for the next question
+  if (g.nextQ < GAME.questions.length){
+    const cx = px + ((g.nextQ+1)*100 - g.dist)*PX_PER_M;
+    if (cx > 0 && cx < GW){
+      ctx.strokeStyle = 'rgba(126,240,208,.5)'; ctx.setLineDash([6,8]); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(cx,0); ctx.lineTo(cx,GH); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = '#7ef0d0'; ctx.font = 'bold 12px Inter, sans-serif';
+      ctx.fillText(`${(g.nextQ+1)*100}m`, cx+5, 18);
+    }
+  }
+
+  // trail
+  ctx.strokeStyle = 'rgba(126,240,255,.35)'; ctx.lineWidth = 8; ctx.lineCap='round';
+  ctx.beginPath(); g.trail.forEach((p,i)=> i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.stroke();
+
+  // ship
+  const flash = g.grace>0 && (Math.floor(g.grace/5)%2===0);
+  ctx.fillStyle = flash ? '#5a8fff' : '#7ef0ff';
+  ctx.shadowColor = '#7ef0ff'; ctx.shadowBlur = 16;
+  ctx.beginPath();
+  ctx.moveTo(px+13, g.y); ctx.lineTo(px-9, g.y-8); ctx.lineTo(px-4, g.y); ctx.lineTo(px-9, g.y+8);
+  ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0;
+}
+
+/* crash → respawn allowed */
+function crash(){
+  g.running = false; stopGame();
+  $('hintTap').classList.add('hide');
+  overlay('💥 Crashed!', `You hit an obstacle at ${Math.floor(g.dist)} m. That wasn't a wrong answer — ` +
+    `you can respawn and keep going.`, [
+      ['Respawn ↻', respawn],
+      ['Quit', goHub, 'ghost'],
+    ]);
+}
+function respawn(){
+  hideOverlay(); $('hintTap').classList.remove('hide');
+  g.y = GH/2; g.vy = 0; g.grace = 110; g.trail = [];
+  // clear obstacles currently on screen so respawn is fair
+  g.obstacles = g.obstacles.filter(o => (o.m - g.dist)*PX_PER_M > GW);
+  g.running = true; g.paused = false;
+  rafId = requestAnimationFrame(loop);
+}
+
+/* checkpoint question */
+function askGameQuestion(){
+  g.paused = true; g.awaitingQ = true;
+  const q = GAME.questions[g.nextQ];
+  $('gqDist').textContent = (g.nextQ+1)*100;
+  $('gqText').textContent = q.prompt;
+  $('gqFb').textContent = ''; $('gqFb').className = 'fb';
+  $('hudQ').textContent = g.nextQ;
+  const box = $('gqOpts'); box.innerHTML = '';
+  q.options.forEach((opt, idx) => {
+    const b = document.createElement('button'); b.className = 'opt'; b.textContent = opt;
+    b.onclick = () => gameAnswer(idx, b, box, q);
+    box.appendChild(b);
+  });
+  $('gq').classList.remove('hide');
+}
+function gameAnswer(idx, btn, box, q){
+  if (!g.awaitingQ) return; g.awaitingQ = false;
+  const correct = idx === q.answer;
+  [...box.children].forEach(c => c.disabled = true);
+  btn.classList.add(correct ? 'right' : 'wrong');
+  if (!correct) box.children[q.answer].classList.add('right');
+  const fb = $('gqFb'); fb.className = 'fb ' + (correct ? 'good':'bad');
+  fb.textContent = (correct ? 'Correct — gate open! ' : 'Wrong — the run ends here. ') + (q.explain||'');
+
+  if (correct){
+    setTimeout(() => {
+      $('gq').classList.add('hide');
+      g.nextQ++; $('hudQ').textContent = g.nextQ;
+      g.speed += 0.012;                 // gets a little faster each checkpoint
+      g.paused = false; rafId = requestAnimationFrame(loop);
+    }, 1000);
+  } else {
+    // log the mistake for later review
+    saveMistake({
+      topic: GAME.topic || 'Space Waves',
+      question: q.prompt,
+      options: q.options,
+      chosen: idx, answer: q.answer,
+      explain: q.explain || '',
+      distance: (g.nextQ+1)*100,
+      when: new Date().toISOString(),
+    });
+    setTimeout(() => {
+      $('gq').classList.add('hide');
+      g.running = false; stopGame();
+      overlay('☄️ Wrong answer', `Your ship is lost at ${(g.nextQ+1)} of ${GAME.questions.length} checkpoints. ` +
+        `This mistake is saved so ${childName} can review it.`, [
+          ['Review this mistake 🚩', renderReview],
+          ['Back to options', goHub, 'ghost'],
+        ]);
+    }, 1500);
+  }
+}
+
+function win(){
+  g.running = false; stopGame();
+  overlay(`🏆 You made it, ${childName}!`, `All ${GAME.questions.length} checkpoints cleared across ` +
+    `${GAME.questions.length*100} m of space. Every answer correct.`, [
+      ['Play again', () => { newRun(); beginRun(); }],
+      ['Back to options', goHub, 'ghost'],
+    ]);
+}
+
+/* overlay helper */
+function overlay(title, sub, buttons){
+  $('goTitle').textContent = title; $('goSub').textContent = sub;
+  const box = $('goBtns'); box.innerHTML = '';
+  buttons.forEach(([label, fn, kind]) => {
+    const b = document.createElement('button');
+    b.className = 'btn' + (kind==='ghost' ? ' ghost' : '');
+    b.textContent = label; b.onclick = fn; box.appendChild(b);
+  });
+  $('gOver').classList.remove('hide');
+}
+function hideOverlay(){ $('gOver').classList.add('hide'); }
+
+/* =====================================================================
+   MISTAKE REVIEW
+   ===================================================================== */
+function renderReview(){
+  const list = loadMistakes();
+  $('revTitle').textContent = `${childName}'s mistakes`;
+  $('revLead').textContent = list.length
+    ? `Every wrong answer from every game — ${list.length} so far. Reviewing mistakes is how they turn into learning.`
+    : 'No mistakes saved yet. Play a game and any wrong answer will be captured here.';
+  const box = $('revList'); box.innerHTML = '';
+  $('clearMis').classList.toggle('hide', !list.length);
+  if (!list.length){ box.innerHTML = '<div class="empty">🎉 Nothing to review yet.</div>'; show('screen-review'); return; }
+  list.forEach(m => {
+    const el = document.createElement('div'); el.className = 'mis';
+    const d = new Date(m.when);
+    const when = isNaN(d) ? '' : d.toLocaleDateString(undefined,{month:'short',day:'numeric'}) + ' · ' +
+      d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+    el.innerHTML =
+      `<p class="meta">${escapeHtml(m.topic)} · ${m.distance||''} m · ${when}</p>` +
+      `<p class="q">${escapeHtml(m.question)}</p>` +
+      `<div class="ans wrong">They chose: ${escapeHtml(m.options[m.chosen])}</div>` +
+      `<div class="ans right">Correct answer: ${escapeHtml(m.options[m.answer])}</div>` +
+      (m.explain ? `<p class="ex">💡 ${escapeHtml(m.explain)}</p>` : '');
+    box.appendChild(el);
+  });
+  show('screen-review');
+}
+$('clearMis').onclick = () => {
+  if (confirm(`Clear all saved mistakes for ${childName}?`)){
+    localStorage.removeItem(childKey+'_mistakes'); renderReview();
+  }
+};
+function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* ---------- boot ---------- */
+refreshReturning();
 </script>
 </body>
 </html>
