@@ -149,6 +149,8 @@
     box-shadow:0 16px 50px rgba(0,0,0,.5);}
   .hint-tap{position:absolute;bottom:14px;left:0;right:0;text-align:center;color:#8a8ac0;
     font-size:13px;pointer-events:none;}
+  /* both games draw their own game-authentic HUDs on the canvas */
+  #screen-game .hud, #screen-game .hint-tap{display:none !important;}
 </style>
 </head>
 <body>
@@ -734,7 +736,7 @@ function resizeGame(){
   GW = cv.width; GH = cv.height;
 }
 window.addEventListener('resize', () => { if (!$('screen-game').classList.contains('hide')) resizeGame(); });
-function stopGame(){ if (rafId) cancelAnimationFrame(rafId); rafId = 0; if (g) g.running = false; }
+function stopGame(){ if (rafId) cancelAnimationFrame(rafId); rafId = 0; if (g){ g.running = false; try{ saveBest(); }catch(e){} } }
 
 /* ---------- choose a game (same quiz, two ways to play) ---------- */
 function chooseGame(quiz){
@@ -849,214 +851,254 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => { if (e.code==='Space' || e.code==='ArrowUp') holding = false; });
 
+/* ---------- shared drawing helpers ---------- */
+const _patCache = {};
+function checker(base, dark, size){
+  const key = base+dark+size;
+  if (_patCache[key]) return _patCache[key];
+  const p = document.createElement('canvas'); p.width = p.height = size*2;
+  const pc = p.getContext('2d');
+  pc.fillStyle = base; pc.fillRect(0,0,size*2,size*2);
+  pc.fillStyle = dark;
+  const r = size*0.62;
+  const dia = (cx,cy) => { pc.beginPath(); pc.moveTo(cx,cy-r); pc.lineTo(cx+r,cy); pc.lineTo(cx,cy+r); pc.lineTo(cx-r,cy); pc.closePath(); pc.fill(); };
+  dia(size,size); dia(0,0); dia(2*size,0); dia(0,2*size); dia(2*size,2*size);
+  const pat = ctx.createPattern(p,'repeat'); _patCache[key] = pat; return pat;
+}
+function roundRectPath(x,y,w,h,r){ ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+function bestKey(){ return childKey+'_best_'+activeGameId; }
+function loadBest(){ return +(localStorage.getItem(bestKey())||0); }
+function saveBest(){ if (!g) return; const k = bestKey(); if (Math.floor(g.dist) > +(localStorage.getItem(k)||0)) localStorage.setItem(k, Math.floor(g.dist)); }
+
 /* =====================================================================
    SPACE WAVES — hold to fly up, release to fall. Question every 200 m.
+   Look: bright diamond-checker terrain corridor, white arrow + trail.
    ===================================================================== */
 const PX_PER_M = 6, V_METRES = 0.2;
 const PLAYER_X = () => Math.round(GW*0.26);
+const WAVE_THEMES = [
+  {sky:'#54c04a', skyD:'#48ac3e', land:'#2f8a24', landD:'#277a1e'},   // green
+  {sky:'#8b45d6', skyD:'#7d3bc7', land:'#571f9c', landD:'#4b1a8b'},   // purple
+  {sky:'#2f9fe0', skyD:'#2a90d0', land:'#1c6ba8', landD:'#175c94'},   // blue
+  {sky:'#e0692f', skyD:'#d15d2a', land:'#a8451c', landD:'#943c17'},   // orange
+];
+const waveTheme = () => WAVE_THEMES[Math.floor(g.dist/CHECK) % WAVE_THEMES.length];
 
 function startWaves(){
   CHECK = 200; activeGameId = 'waves'; activeName = 'Space Waves';
   activeLoop = wavesLoop; activeRespawn = wavesRespawn;
   activePlayAgain = () => { wavesNew(); wavesBegin(); };
   $('gameTopic').textContent = GAME.topic || 'Space Waves';
-  $('hudQT').textContent = GAME.questions.length;
-  $('hintTap').textContent = 'Hold anywhere to fly up · release to fall';
-  $('hintTap').classList.remove('hide');
-  show('screen-game'); resizeGame();
-  stars = Array.from({length:70}, () => ({x:Math.random()*GW, y:Math.random()*GH, z:Math.random()*.8+.2}));
-  wavesNew();
+  show('screen-game'); resizeGame(); wavesNew();
   overlay('🚀 Space Waves', `Fly through ${GAME.questions.length*CHECK} m across ` +
     `${GAME.questions.length} question${GAME.questions.length>1?'s':''} — one every ${CHECK} m. ` +
-    `Crash and you can respawn; a wrong answer ends the run.`, [['Launch 🚀', wavesBegin]]);
+    `Hold to climb, release to dive. Crash and respawn; a wrong answer ends the run.`, [['Launch 🚀', wavesBegin]]);
 }
 function wavesNew(){
-  g = { dist:0, speed:V_METRES, nextQ:0, y:GH/2, vy:0, trail:[], obstacles:[],
-        lastObstacleM:0, grace:0, running:false, paused:true, awaitingQ:false };
-  $('hudDist').textContent = 0; $('hudQ').textContent = 0;
+  g = { dist:0, speed:V_METRES, nextQ:0, y:GH/2, vy:0, trail:[], terrain:[],
+        genM:0, cenCur:GH/2, halfCur:100, grace:0, running:false, paused:true, awaitingQ:false,
+        best:loadBest() };
 }
-function wavesBegin(){ hideOverlay(); $('gq').classList.add('hide'); $('hintTap').classList.remove('hide');
+function wavesBegin(){ hideOverlay(); $('gq').classList.add('hide');
   g.running = true; g.paused = false; rafId = requestAnimationFrame(wavesLoop); }
 function wavesLoop(){ if (!g.running || g.paused) return; wavesUpdate(); wavesDraw(); rafId = requestAnimationFrame(wavesLoop); }
-function wavesSpawn(){
-  const aheadM = g.dist + (GW/PX_PER_M) + 20, spacingM = 16;
-  while (g.lastObstacleM < aheadM){
-    g.lastObstacleM += spacingM;
-    const into = g.lastObstacleM % CHECK;
-    if (into < 8 || into > CHECK - 8) continue;
-    const gapH = Math.max(120, 190 - g.dist*0.04);
-    const gapY = 60 + Math.random()*(GH-120-gapH);
-    g.obstacles.push({m:g.lastObstacleM, gapY, gapH, w:20});
+
+function wavesGen(){
+  // A smooth navigable channel: move a centreline and gap-size gently so the
+  // blocky steps never trap the wave. Checkpoints open into a wide flat lane.
+  const SEG = 22, aheadM = g.dist + (GW/PX_PER_M) + SEG*2;
+  while (g.genM < aheadM){
+    const m0 = g.genM, m1 = g.genM + SEG;
+    const nearCk = (m1 % CHECK) < 44 || (m0 % CHECK) > CHECK-22;
+    if (nearCk){ g.cenCur = GH/2; g.halfCur = GH/2 - 38; }
+    else {
+      const half = Math.max(78, 118 - g.dist*0.012);         // gap slowly narrows
+      g.halfCur = half + (Math.random()*2-1)*10;
+      g.cenCur += (Math.random()*2-1)*30;                     // gentle drift
+      g.cenCur = Math.max(g.halfCur+26, Math.min(GH-g.halfCur-26, g.cenCur));
+    }
+    g.terrain.push({m0, m1, cy:Math.round(g.cenCur-g.halfCur), fy:Math.round(g.cenCur+g.halfCur)});
+    g.genM = m1;
   }
-  g.obstacles = g.obstacles.filter(o => (o.m - g.dist)*PX_PER_M > -60);
+  g.terrain = g.terrain.filter(s => (s.m1 - g.dist)*PX_PER_M > -60);
 }
 function wavesUpdate(){
-  g.dist += g.speed; $('hudDist').textContent = Math.floor(g.dist);
+  g.dist += g.speed;
+  if (g.dist > g.best) g.best = g.dist;
   g.vy += holding ? -0.42 : 0.42; g.vy = Math.max(-6.5, Math.min(6.5, g.vy)); g.y += g.vy;
-  g.trail.push({x:PLAYER_X(), y:g.y}); if (g.trail.length>26) g.trail.shift();
+  g.trail.push({x:PLAYER_X(), y:g.y}); if (g.trail.length>34) g.trail.shift();
   if (g.grace > 0) g.grace--;
-  if ((g.y < 10 || g.y > GH-10) && g.grace<=0){ crashGame('Crashed!'); return; }
-  g.y = Math.max(10, Math.min(GH-10, g.y));
-  wavesSpawn();
-  if (g.grace<=0){
-    const px = PLAYER_X();
-    for (const o of g.obstacles){
-      const ox = px + (o.m - g.dist)*PX_PER_M;
-      if (ox < px+12 && ox+o.w > px-12){
-        if (g.y - 9 < o.gapY || g.y + 9 > o.gapY + o.gapH){ crashGame('Crashed!'); return; }
-      }
-    }
+  wavesGen();
+  const seg = g.terrain.find(s => g.dist >= s.m0 && g.dist < s.m1);
+  if (g.grace<=0 && ((g.y < 8) || (g.y > GH-8) || (seg && (g.y-9 < seg.cy || g.y+9 > seg.fy)))){
+    crashGame('Crashed!'); return;
   }
   if (g.nextQ < GAME.questions.length && g.dist >= (g.nextQ+1)*CHECK){ askGameQuestion(); return; }
-  stars.forEach(s => { s.x -= g.speed*PX_PER_M*s.z*0.6; if (s.x < 0){ s.x = GW; s.y = Math.random()*GH; } });
+}
+function drawLand(x,y,w,h,th,ceiling){
+  if (h<=0 || w<=0) return;
+  ctx.fillStyle = th.land; ctx.fillRect(x,y,w,h);
+  ctx.fillStyle = checker(th.land, th.landD, 13); ctx.fillRect(x,y,w,h);
+  const edge = ceiling ? y+h : y;
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(x, edge); ctx.lineTo(x+w, edge); ctx.stroke();
+  // little spikes pointing into the channel
+  ctx.fillStyle = '#fff';
+  for (let sx = Math.ceil(x/22)*22; sx < x+w; sx += 22){
+    ctx.beginPath();
+    if (ceiling){ ctx.moveTo(sx, edge); ctx.lineTo(sx+7, edge+9); ctx.lineTo(sx+14, edge); }
+    else { ctx.moveTo(sx, edge); ctx.lineTo(sx+7, edge-9); ctx.lineTo(sx+14, edge); }
+    ctx.closePath(); ctx.fill();
+  }
+}
+function drawArrow(px,y,vy){
+  ctx.save(); ctx.translate(px,y); ctx.rotate(Math.atan2(vy,6.5));
+  ctx.fillStyle='#fff'; ctx.shadowColor='rgba(0,0,0,.25)'; ctx.shadowBlur=6;
+  ctx.beginPath(); ctx.moveTo(15,0); ctx.lineTo(-11,-12); ctx.lineTo(-4,0); ctx.lineTo(-11,12); ctx.closePath(); ctx.fill();
+  ctx.shadowBlur=0; ctx.restore();
 }
 function wavesDraw(){
-  ctx.fillStyle = '#0a0a1f'; ctx.fillRect(0,0,GW,GH);
-  stars.forEach(s => { ctx.globalAlpha = s.z; ctx.fillStyle = '#cfe0ff'; ctx.fillRect(s.x, s.y, 2, 2); });
-  ctx.globalAlpha = 1;
-  const px = PLAYER_X();
-  g.obstacles.forEach(o => {
-    const x = px + (o.m - g.dist)*PX_PER_M;
-    if (x < -30 || x > GW+30) return;
-    ctx.fillStyle = '#ff4d8d'; ctx.shadowColor = '#ff4d8d'; ctx.shadowBlur = 12;
-    ctx.fillRect(x, 0, o.w, o.gapY); ctx.fillRect(x, o.gapY+o.gapH, o.w, GH-(o.gapY+o.gapH));
-    ctx.shadowBlur = 0;
+  const th = waveTheme(), px = PLAYER_X();
+  ctx.fillStyle = th.sky; ctx.fillRect(0,0,GW,GH);
+  ctx.save(); ctx.translate(-((g.dist*PX_PER_M)%26), 0);
+  ctx.fillStyle = checker(th.sky, th.skyD, 13); ctx.fillRect(-26,0,GW+52,GH); ctx.restore();
+  g.terrain.forEach(s => {
+    const x0 = px + (s.m0 - g.dist)*PX_PER_M, x1 = px + (s.m1 - g.dist)*PX_PER_M;
+    if (x1 < -40 || x0 > GW+40) return;
+    drawLand(x0, 0, x1-x0, s.cy, th, true);
+    drawLand(x0, s.fy, x1-x0, GH-s.fy, th, false);
   });
-  if (g.nextQ < GAME.questions.length){
-    const cx = px + ((g.nextQ+1)*CHECK - g.dist)*PX_PER_M;
-    if (cx > 0 && cx < GW){
-      ctx.strokeStyle = 'rgba(126,240,208,.5)'; ctx.setLineDash([6,8]); ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(cx,0); ctx.lineTo(cx,GH); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = '#7ef0d0'; ctx.font = 'bold 12px Inter, sans-serif';
-      ctx.fillText(`${(g.nextQ+1)*CHECK}m`, cx+5, 18);
-    }
-  }
-  ctx.strokeStyle = 'rgba(126,240,255,.35)'; ctx.lineWidth = 8; ctx.lineCap='round';
+  // trail (thick white wave path)
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 9; ctx.lineJoin='round'; ctx.lineCap='round';
   ctx.beginPath(); g.trail.forEach((p,i)=> i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.stroke();
-  const flash = g.grace>0 && (Math.floor(g.grace/5)%2===0);
-  ctx.fillStyle = flash ? '#5a8fff' : '#7ef0ff'; ctx.shadowColor = '#7ef0ff'; ctx.shadowBlur = 16;
-  ctx.beginPath();
-  ctx.moveTo(px+13, g.y); ctx.lineTo(px-9, g.y-8); ctx.lineTo(px-4, g.y); ctx.lineTo(px-9, g.y+8);
-  ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0;
+  drawArrow(px, g.y, g.vy);
+  // HUD: distance top-centre, highscore top-right, pause top-left
+  ctx.fillStyle = '#fff'; ctx.textAlign='center'; ctx.font = "700 27px Fraunces, serif";
+  ctx.fillText(`${Math.floor(g.dist)}m`, GW/2, 36);
+  ctx.textAlign='center'; ctx.font = "700 12px Inter, sans-serif";
+  ctx.fillText(`Q ${g.nextQ}/${GAME.questions.length}`, GW/2, 54);
+  ctx.textAlign='right'; ctx.font = "700 12px Inter, sans-serif"; ctx.globalAlpha=.9;
+  ctx.fillText('HIGHSCORE', GW-14, 20); ctx.font="700 18px Inter, sans-serif";
+  ctx.fillText(`${Math.floor(g.best)}m`, GW-14, 40); ctx.globalAlpha=1;
+  ctx.fillStyle='rgba(255,255,255,.9)'; ctx.fillRect(14,14,6,20); ctx.fillRect(24,14,6,20);
+  ctx.textAlign='start';
 }
 function wavesRespawn(){
-  hideOverlay(); $('hintTap').classList.remove('hide');
-  g.y = GH/2; g.vy = 0; g.grace = 110; g.trail = [];
-  g.obstacles = g.obstacles.filter(o => (o.m - g.dist)*PX_PER_M > GW);
+  hideOverlay();
+  const seg = g.terrain.find(s => g.dist >= s.m0 && g.dist < s.m1);
+  g.y = seg ? (seg.cy+seg.fy)/2 : GH/2; g.vy = 0; g.grace = 120; g.trail = [];
   g.running = true; g.paused = false; rafId = requestAnimationFrame(wavesLoop);
 }
 
 /* =====================================================================
    RISE UP — a balloon floats higher; move your shield to knock falling
    objects away before they pop it. Question every 150 m.
+   Look: flat pastel background that recolours each level, white balloon,
+   white falling shapes, SCORE / LEVEL read-outs.
    ===================================================================== */
 const V_RISE = 0.16;
+const RISE_BG = ['#7ec6e0','#bcd99a','#c6d16f','#e7c89a','#e3a9a6','#b7a9e0','#8fd7c6','#e6cf7a'];
+const riseLevel = () => Math.min(45, Math.floor(g.dist/40)+1);
 
 function startRise(){
   CHECK = 150; activeGameId = 'rise'; activeName = 'Rise Up';
   activeLoop = riseLoop; activeRespawn = riseRespawn;
   activePlayAgain = () => { riseNew(); riseBegin(); };
   $('gameTopic').textContent = GAME.topic || 'Rise Up';
-  $('hudQT').textContent = GAME.questions.length;
-  $('hintTap').textContent = 'Move to aim your shield · block objects before they pop the balloon';
-  $('hintTap').classList.remove('hide');
-  show('screen-game'); resizeGame();
-  riseNew();
+  show('screen-game'); resizeGame(); riseNew();
   overlay('🎈 Rise Up', `Protect the balloon for ${GAME.questions.length*CHECK} m across ` +
     `${GAME.questions.length} question${GAME.questions.length>1?'s':''} — one every ${CHECK} m. ` +
-    `Get popped and you can respawn; a wrong answer ends the run.`, [['Lift off 🎈', riseBegin]]);
+    `Move to aim your shield. Get popped and respawn; a wrong answer ends the run.`, [['Lift off 🎈', riseBegin]]);
 }
 function riseNew(){
-  g = { dist:0, speed:V_RISE, nextQ:0, obstacles:[], spawnTimer:40, grace:0,
-        shieldX:GW/2, shieldW:110, running:false, paused:true, awaitingQ:false };
-  $('hudDist').textContent = 0; $('hudQ').textContent = 0;
+  g = { dist:0, speed:V_RISE, nextQ:0, obstacles:[], spawnTimer:40, grace:0, score:0,
+        shieldX:GW/2, shieldW:104, running:false, paused:true, awaitingQ:false, best:loadBest() };
 }
-function riseBegin(){ hideOverlay(); $('gq').classList.add('hide'); $('hintTap').classList.remove('hide');
+function riseBegin(){ hideOverlay(); $('gq').classList.add('hide');
   g.running = true; g.paused = false; rafId = requestAnimationFrame(riseLoop); }
 function riseLoop(){ if (!g.running || g.paused) return; riseUpdate(); riseDraw(); rafId = requestAnimationFrame(riseLoop); }
 
-const SHIELD_Y = () => Math.round(GH*0.46);
-const BALLOON = () => ({ x: GW/2 + Math.sin(g.dist*0.03)*GW*0.16, y: Math.round(GH*0.76), r: 22 });
+const SHIELD_Y = () => Math.round(GH*0.44);
+const BALLOON = () => ({ x: GW/2 + Math.sin(g.dist*0.03)*GW*0.17, y: Math.round(GH*0.78), r: 24 });
 
 function riseUpdate(){
-  g.dist += g.speed; $('hudDist').textContent = Math.floor(g.dist);
+  g.dist += g.speed; g.score += 0.3;
+  if (g.dist > g.best) g.best = g.dist;
   if (g.grace > 0) g.grace--;
-
-  // spawn falling objects
   if (--g.spawnTimer <= 0){
-    g.spawnTimer = Math.max(20, 44 - g.dist*0.04);
-    const r = 12 + Math.random()*7;
-    g.obstacles.push({ x: 30 + Math.random()*(GW-60), y:-20, py:-20, r,
-      vy: 1.9 + Math.random()*1.1 + g.dist*0.0025, vx:0, spin:Math.random()*6, dealt:false });
+    g.spawnTimer = Math.max(18, 42 - g.dist*0.04);
+    const r = 15 + Math.random()*9;
+    g.obstacles.push({ x: 34 + Math.random()*(GW-68), y:-24, py:-24, r,
+      vy: 1.9 + Math.random()*1.1 + g.dist*0.0025, vx:0, spin:Math.random()*6,
+      shape: Math.random()<0.72 ? 'sq' : 'ball', dealt:false });
   }
-
   const sy = SHIELD_Y(), b = BALLOON();
   for (const o of g.obstacles){
-    o.py = o.y; o.y += o.vy; o.x += o.vx; o.spin += 0.15;
-    // crossing the shield plane -> deflect if the shield is under it
-    if (!o.dealt && o.py < sy && o.y >= sy){
-      if (Math.abs(o.x - g.shieldX) <= g.shieldW/2 + o.r){
-        o.dealt = true; o.vy = -Math.abs(o.vy)*0.7 - 1.5;
-        o.vx = (o.x < g.shieldX ? -1 : 1) * (2 + Math.random()*2.5);
-      }
+    o.py = o.y; o.y += o.vy; o.x += o.vx; o.spin += 0.16;
+    if (!o.dealt && o.py < sy && o.y >= sy && Math.abs(o.x - g.shieldX) <= g.shieldW/2 + o.r){
+      o.dealt = true; o.vy = -Math.abs(o.vy)*0.75 - 1.6;
+      o.vx = (o.x < g.shieldX ? -1 : 1) * (2 + Math.random()*2.5); g.score += 15;
     }
-    // balloon hit (only undeflected objects, and only when not in grace)
     if (!o.dealt && g.grace<=0 && Math.hypot(o.x-b.x, o.y-b.y) < b.r + o.r){ crashGame('Balloon popped!'); return; }
   }
-  g.obstacles = g.obstacles.filter(o => o.y < GH+40 && o.y > -80 && o.x > -60 && o.x < GW+60);
-
+  g.obstacles = g.obstacles.filter(o => o.y < GH+50 && o.y > -90 && o.x > -70 && o.x < GW+70);
   if (g.nextQ < GAME.questions.length && g.dist >= (g.nextQ+1)*CHECK){ askGameQuestion(); return; }
 }
 function riseDraw(){
-  // sky
-  const grd = ctx.createLinearGradient(0,0,0,GH);
-  grd.addColorStop(0,'#8ec5e6'); grd.addColorStop(1,'#dff0f7');
-  ctx.fillStyle = grd; ctx.fillRect(0,0,GW,GH);
-  // drifting clouds (scroll down to sell 'rising')
-  ctx.fillStyle = 'rgba(255,255,255,.55)';
-  for (let i=0;i<5;i++){
-    const cyc = (g.dist*3 + i*140) % (GH+120) - 60;
-    const cx = (i*173 % GW);
-    ctx.beginPath(); ctx.arc(cx, cyc, 20, 0, 7); ctx.arc(cx+22, cyc+6, 16, 0, 7); ctx.arc(cx-20, cyc+7, 14, 0, 7); ctx.fill();
-  }
-  const sy = SHIELD_Y(), b = BALLOON();
-  // "next question" marker text
-  if (g.nextQ < GAME.questions.length){
-    ctx.fillStyle = 'rgba(21,91,82,.75)'; ctx.font = 'bold 12px Inter, sans-serif'; ctx.textAlign='center';
-    ctx.fillText(`next question at ${(g.nextQ+1)*CHECK} m`, GW/2, 22); ctx.textAlign='start';
-  }
-  // balloon + string + basket
-  ctx.strokeStyle = '#7a6a58'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(b.x, b.y+b.r); ctx.lineTo(b.x, b.y+b.r+16); ctx.stroke();
-  ctx.fillStyle = '#8a5a3c'; ctx.fillRect(b.x-7, b.y+b.r+16, 14, 10);
-  ctx.fillStyle = '#e8503a'; ctx.shadowColor='rgba(0,0,0,.15)'; ctx.shadowBlur=8;
-  ctx.beginPath(); ctx.ellipse(b.x, b.y, b.r, b.r+3, 0, 0, 7); ctx.fill(); ctx.shadowBlur=0;
-  ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.ellipse(b.x-7, b.y-8, 5, 8, -0.4, 0, 7); ctx.fill();
-  // objects (spiky asteroids)
+  const level = riseLevel();
+  ctx.fillStyle = RISE_BG[(level-1) % RISE_BG.length]; ctx.fillRect(0,0,GW,GH);
+  // big translucent level number watermark
+  ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.textAlign='center';
+  ctx.font = "800 128px Fraunces, serif"; ctx.fillText(String(level), GW/2, GH*0.52);
+  const b = BALLOON();
+  // falling objects (white squares / balls) & deflected (white chevrons)
   g.obstacles.forEach(o => {
     ctx.save(); ctx.translate(o.x, o.y); ctx.rotate(o.spin);
-    ctx.fillStyle = o.dealt ? '#9fb0c0' : '#5b4636';
-    ctx.beginPath();
-    for (let k=0;k<8;k++){ const a=k/8*Math.PI*2; const rr=o.r*(k%2?0.6:1); ctx.lineTo(Math.cos(a)*rr, Math.sin(a)*rr); }
-    ctx.closePath(); ctx.fill(); ctx.restore();
+    if (o.dealt){
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 8; ctx.lineCap='round'; ctx.lineJoin='round';
+      ctx.beginPath(); ctx.moveTo(-o.r,-o.r*0.35); ctx.lineTo(0,o.r*0.55); ctx.lineTo(o.r,-o.r*0.35); ctx.stroke();
+    } else if (o.shape === 'ball'){
+      ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.strokeStyle='#fff'; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(0,0,o.r,0,7); ctx.fill(); ctx.stroke();
+    } else {
+      ctx.fillStyle = '#fff'; roundRectPath(-o.r,-o.r,o.r*2,o.r*2,5); ctx.fill();
+    }
+    ctx.restore();
   });
-  // shield (teal arc bar the player controls)
-  ctx.fillStyle = '#1E7A6E'; ctx.strokeStyle='#0f5049'; ctx.lineWidth=2;
-  const shH = 12;
-  ctx.beginPath();
-  ctx.moveTo(g.shieldX - g.shieldW/2, sy);
-  ctx.quadraticCurveTo(g.shieldX, sy - shH*1.6, g.shieldX + g.shieldW/2, sy);
-  ctx.quadraticCurveTo(g.shieldX, sy + shH, g.shieldX - g.shieldW/2, sy);
-  ctx.closePath(); ctx.fill(); ctx.stroke();
-  // grace flash on balloon
+  // shield — a pale protective orb the player moves
+  ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(g.shieldX, SHIELD_Y(), 26, 0, 7); ctx.fill(); ctx.stroke();
+  // balloon + string + knot
+  ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(b.x, b.y+b.r); ctx.quadraticCurveTo(b.x+8, b.y+b.r+16, b.x, b.y+b.r+30); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.ellipse(b.x, b.y, b.r, b.r+4, 0, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(b.x-5, b.y+b.r-1); ctx.lineTo(b.x+5, b.y+b.r-1); ctx.lineTo(b.x, b.y+b.r+7); ctx.closePath(); ctx.fill();
   if (g.grace>0 && Math.floor(g.grace/6)%2===0){
-    ctx.strokeStyle='rgba(30,122,110,.8)'; ctx.lineWidth=3;
-    ctx.beginPath(); ctx.arc(b.x, b.y, b.r+8, 0, 7); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r+9, 0, 7); ctx.stroke();
   }
+  // HUD: SCORE (top-left), LEVEL x/45 (top-right)
+  ctx.fillStyle = '#1b1b1b'; ctx.strokeStyle = '#1b1b1b'; ctx.lineWidth = 2;
+  ctx.textAlign='left';
+  ctx.font = "800 26px Inter, sans-serif"; ctx.fillText(String(Math.floor(g.score)), 22, 42);
+  ctx.font = "700 11px Inter, sans-serif"; ctx.fillText('SCORE', 24, 60);
+  ctx.beginPath(); ctx.moveTo(20,50); ctx.lineTo(74,50); ctx.stroke();
+  ctx.textAlign='right';
+  ctx.font = "800 22px Inter, sans-serif"; ctx.fillText(`${level} / 45`, GW-22, 42);
+  ctx.font = "700 11px Inter, sans-serif"; ctx.fillText('LEVEL', GW-24, 60);
+  ctx.beginPath(); ctx.moveTo(GW-92,50); ctx.lineTo(GW-20,50); ctx.stroke();
+  if (g.nextQ < GAME.questions.length){
+    ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.textAlign='center'; ctx.font = "700 12px Inter, sans-serif";
+    ctx.fillText(`next question at ${(g.nextQ+1)*CHECK} m`, GW/2, GH-16);
+  }
+  ctx.textAlign='start';
 }
 function riseRespawn(){
-  hideOverlay(); $('hintTap').classList.remove('hide');
-  g.obstacles = []; g.grace = 120; g.spawnTimer = 40;
+  hideOverlay();
+  g.obstacles = []; g.grace = 130; g.spawnTimer = 40;
   g.running = true; g.paused = false; rafId = requestAnimationFrame(riseLoop);
 }
 
