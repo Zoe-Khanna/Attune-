@@ -268,4 +268,12 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
 def index():
+    # The discovery session is the front door — it profiles how the child
+    # thinks before any lesson begins.
+    return FileResponse("static/discovery.html")
+
+
+@app.get("/game")
+def game():
+    # The textbook-photo runner game (build questions from a page, then play).
     return FileResponse("static/index.html")

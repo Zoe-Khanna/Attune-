@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Attune — discovery session</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap');
+  :root{
+    --paper:#F6F3EC; --ink:#22201B; --muted:#6E6A60; --line:#E3DED2;
+    --teal:#1E7A6E; --teal-dk:#155B52; --teal-soft:#DCEBE7;
+    --clay:#C97A54; --good:#2E7D5B; --bad:#C4553B; --gold:#B87914;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif;display:flex;justify-content:center;-webkit-font-smoothing:antialiased;}
+  .wrap{width:100%;max-width:640px;padding:26px 20px 60px;}
+
+  .eyebrow{font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--teal);
+    font-weight:700;margin:0 0 12px;}
+  h1{font-family:'Fraunces',serif;font-weight:600;font-size:40px;line-height:1.08;margin:0 0 16px;}
+  h2{font-family:'Fraunces',serif;font-weight:600;font-size:26px;line-height:1.2;margin:0 0 12px;}
+  .lead{color:var(--muted);font-size:17px;line-height:1.5;margin:0 0 8px;}
+  .muted{color:var(--muted)}
+
+  .card{background:#fff;border:1px solid var(--line);border-radius:20px;padding:26px;margin-top:22px;
+    box-shadow:0 2px 14px rgba(34,32,27,.04);}
+  label{display:block;font-weight:700;font-size:16px;margin:0 0 10px;}
+  input[type=text]{width:100%;padding:15px 16px;border:1px solid var(--line);border-radius:12px;
+    font-family:inherit;font-size:17px;background:#fff;color:var(--ink);}
+  input[type=text]:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-soft);}
+  .hint{color:var(--muted);font-size:15px;line-height:1.5;margin:14px 0 0;}
+
+  .btn{border:none;cursor:pointer;font-family:inherit;font-weight:700;font-size:17px;
+    padding:16px 22px;border-radius:14px;background:var(--teal);color:#fff;width:100%;transition:background .15s;}
+  .btn:hover{background:var(--teal-dk)}
+  .btn:disabled{opacity:.45;cursor:default}
+  .btn.sec{background:var(--teal-soft);color:var(--teal-dk)}
+  .btn.sec:hover{background:#CFE6E0}
+  .btn.ghost{background:transparent;color:var(--teal-dk);border:1px solid var(--line);}
+  .btn.ghost:hover{background:#fff;border-color:var(--teal);}
+
+  .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}
+  .chip{display:inline-block;background:var(--teal-soft);color:var(--teal-dk);font-weight:700;
+    font-size:14px;padding:8px 16px;border-radius:99px;}
+  .homelink{color:var(--teal-dk);font-weight:600;text-decoration:underline;font-size:16px;cursor:pointer;background:none;border:none;font-family:inherit;}
+
+  .foot{color:var(--muted);font-size:14px;text-align:center;margin-top:34px;line-height:1.5;}
+
+  .hide{display:none !important}
+  .center{text-align:center}
+
+  /* ---- progress ---- */
+  .prog{display:flex;align-items:center;gap:8px;margin:2px 0 2px;}
+  .prog .blocks{display:flex;gap:6px;flex:1;}
+  .prog .seg{height:6px;border-radius:99px;background:var(--line);flex:1;overflow:hidden;position:relative;}
+  .prog .seg > i{position:absolute;inset:0;background:var(--teal);width:0;transition:width .3s;}
+  .prog .lbl{font-size:13px;color:var(--muted);font-weight:600;white-space:nowrap;}
+
+  /* ---- question ---- */
+  .qtag{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--teal);font-weight:700;margin:0 0 8px;}
+  .qtext{font-family:'Fraunces',serif;font-size:24px;line-height:1.3;margin:0 0 20px;}
+  .opts{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  @media(max-width:520px){.opts{grid-template-columns:1fr}}
+  .opt{padding:16px;border:1px solid var(--line);border-radius:14px;background:#fff;
+    font-size:17px;font-weight:600;cursor:pointer;font-family:inherit;text-align:left;color:var(--ink);transition:.12s;}
+  .opt:hover{border-color:var(--teal);background:var(--teal-soft)}
+  .opt.right{border-color:var(--good);background:#E4F1EA}
+  .opt.wrong{border-color:var(--bad);background:#F6E3DD}
+  .opt:disabled{cursor:default}
+  .fb{margin-top:16px;font-size:15px;font-weight:600;min-height:22px;}
+  .fb.good{color:var(--good)} .fb.bad{color:var(--bad)}
+
+  /* ---- result ---- */
+  .stat{display:flex;align-items:flex-start;gap:14px;padding:16px 0;border-top:1px solid var(--line);}
+  .stat:first-child{border-top:none;}
+  .stat .ic{font-size:26px;line-height:1;flex-shrink:0;width:34px;text-align:center;}
+  .stat .k{font-weight:700;font-size:16px;margin:0 0 3px;}
+  .stat .v{color:var(--muted);font-size:15px;line-height:1.45;margin:0;}
+  .bar{height:9px;border-radius:99px;background:var(--line);overflow:hidden;margin:8px 0 2px;}
+  .bar > i{display:block;height:100%;background:var(--teal);border-radius:99px;}
+  .barrow{margin:12px 0;}
+  .barrow .top{display:flex;justify-content:space-between;font-size:15px;font-weight:600;}
+  .barrow .top .pct{color:var(--muted);font-weight:600;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- =============== SCREEN 1 · START =============== -->
+  <section id="screen-start">
+    <p class="eyebrow">Attune</p>
+    <h1>Learning that fits how your child thinks.</h1>
+    <p class="lead">A short discovery session learns your child's focus, motivation, and sensory
+      needs — then every lesson adapts to them.</p>
+
+    <div class="card">
+      <h2>Start</h2>
+      <label for="name">Child's first name</label>
+      <input id="name" type="text" placeholder="e.g. Aanya" autocomplete="off" maxlength="24">
+      <p class="hint">The discovery session mixes math, reading, and puzzle games so it sees how
+        your child focuses across different kinds of thinking.</p>
+      <button class="btn" id="startBtn" style="margin-top:20px">Begin discovery session</button>
+    </div>
+
+    <p class="foot">Prototype · data saved only in this browser · not a diagnostic tool.</p>
+  </section>
+
+  <!-- =============== SCREEN 2 · INTRO =============== -->
+  <section id="screen-intro" class="hide">
+    <div class="topbar">
+      <span class="chip">Discovery</span>
+      <button class="homelink" data-home>home</button>
+    </div>
+    <div class="card center">
+      <h2 id="introTitle">Let's see how your brain works best</h2>
+      <p class="lead" id="introSub" style="margin-bottom:22px"></p>
+      <button class="btn" id="readyBtn">I'm ready</button>
+    </div>
+    <p class="foot">3 blocks · 5 quick games each · patterns, reading &amp; number puzzles.</p>
+  </section>
+
+  <!-- =============== SCREEN 3 · BLOCK BREAK =============== -->
+  <section id="screen-break" class="hide">
+    <div class="topbar">
+      <span class="chip">Discovery</span>
+      <button class="homelink" data-home>home</button>
+    </div>
+    <div class="card center">
+      <div style="font-size:44px;line-height:1" id="breakIcon">✅</div>
+      <h2 id="breakTitle" style="margin-top:12px">Block done</h2>
+      <p class="lead" id="breakSub" style="margin-bottom:22px"></p>
+      <button class="btn" id="breakBtn">Next block</button>
+    </div>
+  </section>
+
+  <!-- =============== SCREEN 4 · QUESTION =============== -->
+  <section id="screen-q" class="hide">
+    <div class="topbar">
+      <span class="chip">Discovery</span>
+      <button class="homelink" data-home>home</button>
+    </div>
+
+    <div class="prog" style="margin-top:16px">
+      <div class="blocks" id="progBlocks"></div>
+      <span class="lbl" id="progLbl">Block 1 of 3</span>
+    </div>
+
+    <div class="card">
+      <p class="qtag" id="qtag">Pattern game</p>
+      <p class="qtext" id="qtext"></p>
+      <div class="opts" id="opts"></div>
+      <p class="fb" id="fb"></p>
+    </div>
+  </section>
+
+  <!-- =============== SCREEN 5 · RESULT / PROFILE =============== -->
+  <section id="screen-result" class="hide">
+    <div class="topbar">
+      <span class="chip">Profile</span>
+      <button class="homelink" data-home>home</button>
+    </div>
+
+    <h1 id="resTitle" style="font-size:32px;margin-top:16px">All done!</h1>
+    <p class="lead" id="resLead"></p>
+
+    <div class="card">
+      <h2 style="font-size:20px">How each kind of thinking went</h2>
+      <div id="domainBars"></div>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:20px">What the session noticed</h2>
+      <div id="insights"></div>
+    </div>
+
+    <button class="btn" id="againBtn" style="margin-top:22px">Start a new discovery session</button>
+    <p class="foot">This is a prototype profile built from a short game — it is <b>not</b> a
+      diagnosis and shows no clinical label. Data is saved only in this browser.</p>
+  </section>
+
+</div>
+
+<script>
+/* =====================================================================
+   ATTUNE — discovery session
+   Asks for the child's name, then runs 3 blocks of 5 questions each.
+   Every block mixes PATTERNS, ENGLISH and MATHS, and the questions get
+   harder with each step. We time and score every answer, then build a
+   lightweight (non-diagnostic) profile saved in the browser.
+   ===================================================================== */
+
+const $ = id => document.getElementById(id);
+const show = id => {
+  ['screen-start','screen-intro','screen-break','screen-q','screen-result']
+    .forEach(s => $(s).classList.toggle('hide', s !== id));
+  window.scrollTo(0,0);
+};
+
+/* ---------- the question bank ----------
+   3 blocks × 5 questions. In every block the domains are mixed and the
+   difficulty (d) rises 1→5. Block 2 is harder than block 1, block 3
+   hardest of all. domain ∈ pattern | english | maths.               */
+const BLOCKS = [
+  /* ---- Block 1 · warm up ---- */
+  [
+    {domain:'pattern', d:1, q:'What comes next?   ⭐ 🌙 ⭐ 🌙 ⭐ ___',
+      options:['🌙','⭐','☀️','⭐🌙'], answer:0, why:'It goes star, moon, star, moon…'},
+    {domain:'english', d:2, q:'Which word rhymes with “cat”?',
+      options:['dog','hat','cup','car'], answer:1, why:'“Hat” ends with the same -at sound.'},
+    {domain:'maths', d:3, q:'3 + 4 = ?',
+      options:['6','7','8','5'], answer:1, why:'3 and 4 make 7.'},
+    {domain:'pattern', d:4, q:'What number is next?   5, 10, 15, 20, ___',
+      options:['22','25','30','24'], answer:1, why:'It counts up by 5 each time.'},
+    {domain:'english', d:5, q:'What is the opposite of “happy”?',
+      options:['glad','sad','big','fast'], answer:1, why:'“Sad” is the opposite of happy.'},
+  ],
+  /* ---- Block 2 · warming up ---- */
+  [
+    {domain:'maths', d:1, q:'12 − 5 = ?',
+      options:['6','7','8','5'], answer:1, why:'Take 5 away from 12 to get 7.'},
+    {domain:'pattern', d:2, q:'Finish the pattern:   2, 4, 8, 16, ___',
+      options:['20','24','32','18'], answer:2, why:'Each number doubles: 16 × 2 = 32.'},
+    {domain:'english', d:3, q:'Which one is a complete sentence?',
+      options:['The dog.','Running fast.','The dog ran fast.','Fast the dog.'], answer:2,
+      why:'It has a naming part and a doing part.'},
+    {domain:'maths', d:4, q:'What is 6 × 7?',
+      options:['42','36','48','40'], answer:0, why:'Six sevens make 42.'},
+    {domain:'pattern', d:5, q:'Which is the odd one out?   triangle, square, circle, cube',
+      options:['triangle','square','circle','cube'], answer:3,
+      why:'A cube is 3-D — the others are flat shapes.'},
+  ],
+  /* ---- Block 3 · the trickier games ---- */
+  [
+    {domain:'english', d:1, q:'Choose the correct word:   “She ran ___ than her friend.”',
+      options:['fast','faster','fastest','more fast'], answer:1,
+      why:'Comparing two people uses “faster”.'},
+    {domain:'maths', d:2, q:'What is half of 48?',
+      options:['24','22','26','28'], answer:0, why:'48 split into two equal parts is 24.'},
+    {domain:'pattern', d:3, q:'What comes next?   1, 1, 2, 3, 5, ___',
+      options:['6','7','8','9'], answer:2, why:'Add the two before it: 3 + 5 = 8.'},
+    {domain:'maths', d:4, q:'A pack has 6 pencils. How many pencils in 4 packs?',
+      options:['20','24','18','28'], answer:1, why:'4 packs × 6 pencils = 24.'},
+    {domain:'english', d:5, q:'Which sentence is punctuated correctly?',
+      options:['wheres my book','Where’s my book?','Where’s my book','wheres my book?'], answer:1,
+      why:'It needs the apostrophe in “Where’s” and a question mark.'},
+  ],
+];
+
+const DOMAIN_META = {
+  pattern: {label:'Pattern game', key:'Patterns',    icon:'🧩'},
+  english: {label:'Word game',    key:'English',     icon:'📖'},
+  maths:   {label:'Number game',  key:'Mathematics', icon:'🔢'},
+};
+
+/* ---------- session state ---------- */
+let childName = '';
+let bi = 0, qi = 0;          // block index, question index
+let askedAt = 0;             // timestamp the current question appeared
+let locked = false;          // stop double answers
+const results = [];          // {domain, d, correct, ms, block}
+
+/* ---------- screen 1: start ---------- */
+$('name').addEventListener('keydown', e => { if (e.key === 'Enter') $('startBtn').click(); });
+$('startBtn').onclick = () => {
+  const n = $('name').value.trim();
+  childName = n ? n.charAt(0).toUpperCase() + n.slice(1) : 'your child';
+  $('introTitle').textContent = `Let's see how ${childName}'s brain works best`;
+  $('introSub').textContent =
+    `A few quick games. No grades, no pressure. About 5 minutes. ${childName} just plays — ` +
+    `Attune watches how they focus.`;
+  show('screen-intro');
+};
+
+/* ---------- screen 2: intro ---------- */
+$('readyBtn').onclick = () => { bi = 0; qi = 0; results.length = 0; startQuestion(); };
+
+/* ---------- block break ---------- */
+$('breakBtn').onclick = () => { startQuestion(); };
+
+/* ---------- home links ---------- */
+document.querySelectorAll('[data-home]').forEach(b => b.onclick = () => show('screen-start'));
+
+/* ---------- progress bar ---------- */
+function drawProgress(){
+  const box = $('progBlocks'); box.innerHTML = '';
+  for (let b = 0; b < BLOCKS.length; b++){
+    const seg = document.createElement('div'); seg.className = 'seg';
+    const fill = document.createElement('i');
+    let pct = 0;
+    if (b < bi) pct = 100;
+    else if (b === bi) pct = (qi / BLOCKS[b].length) * 100;
+    fill.style.width = pct + '%';
+    seg.appendChild(fill); box.appendChild(seg);
+  }
+  $('progLbl').textContent = `Block ${bi+1} of ${BLOCKS.length}`;
+}
+
+/* ---------- ask a question ---------- */
+function startQuestion(){
+  const q = BLOCKS[bi][qi];
+  const meta = DOMAIN_META[q.domain];
+  $('qtag').textContent = `${meta.label} · question ${qi+1} of 5`;
+  $('qtext').textContent = q.q;
+  $('fb').textContent = ''; $('fb').className = 'fb';
+  drawProgress();
+
+  const box = $('opts'); box.innerHTML = '';
+  q.options.forEach((opt, idx) => {
+    const b = document.createElement('button');
+    b.className = 'opt'; b.textContent = opt;
+    b.onclick = () => answer(idx, b, box, q);
+    box.appendChild(b);
+  });
+
+  locked = false;
+  askedAt = Date.now();
+  show('screen-q');
+}
+
+function answer(idx, btn, box, q){
+  if (locked) return;
+  locked = true;
+  const ms = Date.now() - askedAt;
+  const correct = idx === q.answer;
+
+  [...box.children].forEach(c => c.disabled = true);
+  btn.classList.add(correct ? 'right' : 'wrong');
+  if (!correct) box.children[q.answer].classList.add('right');
+
+  results.push({domain:q.domain, d:q.d, correct, ms, block:bi});
+
+  const fb = $('fb');
+  fb.className = 'fb ' + (correct ? 'good' : 'bad');
+  fb.textContent = (correct ? 'Nice! ' : 'Good try. ') + q.why;
+
+  // fill this question's slice of the progress bar
+  qi_advance_preview();
+
+  setTimeout(next, correct ? 1100 : 1900);
+}
+
+// briefly show the progress moving before we swap screens
+function qi_advance_preview(){
+  const segs = $('progBlocks').children;
+  if (segs[bi]) segs[bi].firstChild.style.width = ((qi+1)/BLOCKS[bi].length)*100 + '%';
+}
+
+function next(){
+  qi++;
+  if (qi < BLOCKS[bi].length){
+    startQuestion();
+    return;
+  }
+  // finished a block
+  bi++; qi = 0;
+  if (bi < BLOCKS.length){
+    showBreak();
+  } else {
+    finish();
+  }
+}
+
+function showBreak(){
+  const done = bi;               // blocks completed so far
+  const icons = ['🌱','🚀'];
+  $('breakIcon').textContent = icons[done-1] || '✅';
+  $('breakTitle').textContent = `Block ${done} done — nice work, ${childName}!`;
+  $('breakSub').textContent = bi === 1
+    ? 'The next games get a little trickier. Take a breath whenever you like.'
+    : 'Last block! These are the trickiest puzzles of all.';
+  $('breakBtn').textContent = `Start block ${bi+1}`;
+  show('screen-break');
+}
+
+/* =====================================================================
+   BUILD THE PROFILE  (honest, lightweight, non-diagnostic)
+   ===================================================================== */
+function finish(){
+  const total = results.length;
+  const correct = results.filter(r => r.correct).length;
+
+  // accuracy per domain
+  const dom = {};
+  for (const key of ['pattern','english','maths']) dom[key] = {c:0,t:0};
+  results.forEach(r => { dom[r.domain].t++; if (r.correct) dom[r.domain].c++; });
+
+  // pace
+  const avgMs = results.reduce((a,r)=>a+r.ms,0) / total;
+  const avgS = avgMs/1000;
+  let pace, paceWhy;
+  if (avgS < 6)      { pace = 'Quick responder';   paceWhy = `Answered fast — about ${avgS.toFixed(1)}s per question. Watch that speed doesn't outrun accuracy.`; }
+  else if (avgS <= 13){ pace = 'Steady pace';       paceWhy = `A calm, even rhythm — about ${avgS.toFixed(1)}s per question.`; }
+  else                { pace = 'Takes their time';  paceWhy = `Thought carefully — about ${avgS.toFixed(0)}s per question. Values getting it right over speed.`; }
+
+  // attention window: accuracy in the first block vs the last block
+  const acc = b => {
+    const rs = results.filter(r => r.block === b);
+    return rs.length ? rs.filter(r=>r.correct).length / rs.length : 0;
+  };
+  const first = acc(0), last = acc(BLOCKS.length-1);
+  let attn, attnWhy;
+  if (last >= first - 0.001){ attn = 'Focus held strong'; attnWhy = 'Stayed just as accurate as the games got harder and longer — a wide attention window.'; }
+  else if (first - last <= 0.2){ attn = 'Focus mostly held'; attnWhy = 'A small dip on the hardest block — normal as difficulty climbs.'; }
+  else { attn = 'Focus faded late'; attnWhy = 'Accuracy dropped on the later, harder block — may focus best in shorter bursts.'; }
+
+  // strongest thinking style
+  let best = 'pattern', bestAcc = -1;
+  for (const key of ['pattern','english','maths']){
+    const a = dom[key].t ? dom[key].c/dom[key].t : 0;
+    if (a > bestAcc){ bestAcc = a; best = key; }
+  }
+
+  const profile = {
+    name: childName, when: new Date().toISOString(),
+    score: {correct, total},
+    domains: dom, avgSeconds: +avgS.toFixed(1),
+    strongest: best, pace, attention: attn,
+  };
+  try { localStorage.setItem('attune_profile_' + childName.toLowerCase(), JSON.stringify(profile)); } catch(e){}
+
+  renderResult(profile, {paceWhy, attnWhy, bestLabel: DOMAIN_META[best].key});
+}
+
+function renderResult(p, extra){
+  $('resTitle').textContent = `${p.name}'s discovery profile`;
+  $('resLead').textContent =
+    `${p.name} answered ${p.score.correct} of ${p.score.total} across patterns, reading and number puzzles. ` +
+    `Here's what the games suggest about how ${p.name} likes to think.`;
+
+  // domain bars
+  const box = $('domainBars'); box.innerHTML = '';
+  for (const key of ['pattern','english','maths']){
+    const d = p.domains[key];
+    const pct = d.t ? Math.round(d.c/d.t*100) : 0;
+    const row = document.createElement('div'); row.className = 'barrow';
+    row.innerHTML =
+      `<div class="top"><span>${DOMAIN_META[key].icon} ${DOMAIN_META[key].key}</span>`+
+      `<span class="pct">${d.c}/${d.t}</span></div>`+
+      `<div class="bar"><i style="width:${pct}%"></i></div>`;
+    box.appendChild(row);
+  }
+
+  // insight cards
+  const ins = $('insights'); ins.innerHTML = '';
+  const rows = [
+    ['💡','Strongest thinking style', `${p.name} did best on ${extra.bestLabel.toLowerCase()} questions today.`],
+    ['⏱️','Pace', extra.paceWhy],
+    ['🎯','Attention window', extra.attnWhy],
+  ];
+  rows.forEach(([ic,k,v]) => {
+    const el = document.createElement('div'); el.className = 'stat';
+    el.innerHTML = `<div class="ic">${ic}</div><div><p class="k">${k}</p><p class="v">${v}</p></div>`;
+    ins.appendChild(el);
+  });
+
+  show('screen-result');
+}
+
+/* ---------- start over ---------- */
+$('againBtn').onclick = () => { $('name').value = ''; show('screen-start'); };
+</script>
+</body>
+</html>
