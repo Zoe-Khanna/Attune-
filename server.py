@@ -12,7 +12,7 @@ Run locally:
     open http://127.0.0.1:8000
 """
 
-import os, json, re, base64, random, time
+import os, io, json, re, base64, random, time
 from typing import List, Optional
 
 import requests
@@ -30,29 +30,43 @@ app = FastAPI(title="Attune")
 # ---------------------------------------------------------------- prompts
 GENERATE_PROMPT = """You are an expert teacher and assessment designer building a quiz for a student.
 
-You will receive study material (text, or an image of a textbook page). It may contain
-explanations, facts, worked examples, formulas, or existing questions.
+You will receive study material: text, an image of a page, a scanned document, or even an
+existing worksheet/quiz (e.g. matching columns, fill-in-the-blanks, or multiple-choice
+questions). Your job is NOT to reproduce that material — it is to teach the same ideas with
+FRESH questions the student has never seen.
 
 WORK IN THIS EXACT ORDER:
 
-STEP 1 - ANALYZE:
+STEP 1 - READ AND UNDERSTAND:
 - What subject/topic is this? Be specific (e.g. "algebraic identities: expanding (a+b)^2",
-  not just "math").
-- List every distinct CONCEPT, rule, formula, or idea the material teaches.
+  or "geography: physical landforms and their definitions" — not just "math" or "geography").
+- List every distinct CONCEPT, rule, fact, definition, formula or idea the material teaches
+  or tests. If the material is ITSELF a set of questions (matching, blanks, MCQs), look
+  THROUGH each item to the underlying concept it is really testing, and list that concept.
 
-STEP 2 - DESIGN {n} NEW QUESTIONS:
-- Cover the concepts you listed; spread coverage, don't cluster on one.
-- BRAND NEW: different numbers, different examples, fresh wording. NEVER copy or lightly
-  reword the material's own sentences or questions.
-- Difficulty ladder: start easy (direct application), build to hard (apply the concept to
-  an unfamiliar situation, or combine two concepts).
+STEP 2 - DESIGN NEW QUESTIONS ON THOSE SAME CONCEPTS:
+- Write at least one new question for EVERY concept you listed, then add deeper questions
+  that combine or apply concepts. Aim for about {n} questions, but produce MORE if the
+  material is rich — cover everything it teaches. Never pad with filler if it is thin.
+- Each question must test the SAME concept as the source, but be a genuinely DIFFERENT
+  question: new wording, new numbers, new examples, a new scenario or a reversed direction
+  (e.g. if the source matched "harbor -> definition", ask the definition and offer terms,
+  or ask which term does NOT fit).
+- ABSOLUTELY FORBIDDEN: copying a sentence from the material and deleting a word
+  (fill-in-the-blank of the original), or repeating one of the material's own questions with
+  only tiny edits. If a student memorised the input, your questions must still make them
+  think. Test UNDERSTANDING of the concept, not recall of the exact wording.
+- Difficulty ladder: start easy (direct recognition/application), build to hard (apply the
+  concept to an unfamiliar situation, or combine two concepts).
 - For math/formula material: invent NEW problems using the same rules, and SOLVE each one
   step by step in your reasoning so the answer is guaranteed correct.
-- If reading an IMAGE: first transcribe the key formulas/facts, and state your reading of
-  any ambiguous symbol, before writing questions.
+- If reading an IMAGE or SCAN: first transcribe the key facts/definitions/formulas, and
+  state your reading of any ambiguous symbol, before writing questions.
 - Keep each question SHORT (it appears inside a game, on one line if possible).
+- Use plain text only — NO LaTeX or markdown symbols (write "->" not "\\rightarrow", "x^2"
+  not "$x^2$").
 - 4 options each, each option short. Wrong options must be PLAUSIBLE student errors
-  (sign slips, off-by-one, common misconceptions) - never silly.
+  (sign slips, off-by-one, common misconceptions, closely-related terms) - never silly.
 - Exactly ONE correct option.
 
 STEP 3 - OUTPUT:
@@ -64,7 +78,8 @@ After your reasoning, output the quiz inside <QUIZ> tags, exactly:
   "difficulty":"easy"}}
 ]}}
 </QUIZ>
-"answer" is the 0-3 index of the correct option. No markdown fences inside the tags."""
+"answer" is the 0-3 index of the correct option. Output as many question objects as the
+material supports. No markdown fences inside the tags."""
 
 VERIFY_PROMPT = """You are a meticulous exam checker. Below is a quiz in JSON. For EACH question,
 independently solve it yourself from scratch WITHOUT trusting the marked answer.
@@ -178,13 +193,29 @@ def _extract_quiz(text: str) -> dict:
         return {}
 
 
+_LATEX = {r"\rightarrow": "->", r"\to": "->", r"\times": "x", r"\cdot": "*",
+          r"\div": "/", r"\leq": "<=", r"\geq": ">=", r"\neq": "!=",
+          r"\pm": "+/-", r"\degree": "deg", r"\%": "%"}
+
+
+def _plain(s: str) -> str:
+    """Strip stray LaTeX/markdown so questions read as plain text in the game."""
+    s = str(s)
+    for k, v in _LATEX.items():
+        s = s.replace(k, v)
+    s = re.sub(r"\$+", "", s)            # $...$ math delimiters
+    s = re.sub(r"\\[a-zA-Z]+", "", s)    # leftover \commands
+    s = s.replace("\\", "").replace("**", "").replace("`", "")
+    return re.sub(r"\s+", " ", s).strip()
+
+
 def _sanitize(quiz: dict) -> dict:
     """Dedupe options, guarantee exactly one valid answer, shuffle positions."""
     clean = []
     for q in quiz.get("questions", []):
         if not (q.get("prompt") and isinstance(q.get("options"), list)):
             continue
-        raw = [str(o).strip() for o in q["options"] if str(o).strip()]
+        raw = [_plain(o) for o in q["options"] if _plain(o)]
         idx = q.get("answer", 0)
         if not isinstance(idx, int) or not (0 <= idx < len(raw)):
             continue
@@ -197,18 +228,20 @@ def _sanitize(quiz: dict) -> dict:
             opts[-1] = correct
         random.shuffle(opts)
         clean.append({
-            "prompt": str(q["prompt"]).strip(),
+            "prompt": _plain(q["prompt"]),
             "options": opts,
             "answer": opts.index(correct),
-            "explain": str(q.get("explain", "")).strip()[:220],
+            "explain": _plain(q.get("explain", ""))[:220],
             "difficulty": q.get("difficulty", "medium"),
         })
     return {"topic": quiz.get("topic", "Practice"), "questions": clean}
 
 
 def generate(user_content, kind: str, n: int) -> dict:
+    # More questions => more reasoning + output tokens. Scale the budget with n.
+    budget = min(16000, 3000 + n * 350)
     model = pick_model(kind)
-    raw = _chat([{"role": "user", "content": user_content}], model, 0.7)
+    raw = _chat([{"role": "user", "content": user_content}], model, 0.7, max_tokens=budget)
     draft = _sanitize(_extract_quiz(raw))
     if not draft["questions"]:
         raise HTTPException(422, "Couldn't build questions from that. Try clearer material.")
@@ -218,7 +251,7 @@ def generate(user_content, kind: str, n: int) -> dict:
         tmodel = pick_model("text")
         raw2 = _chat([{"role": "user",
                        "content": VERIFY_PROMPT + json.dumps(draft, ensure_ascii=False)}],
-                     tmodel, 0.0)
+                     tmodel, 0.0, max_tokens=budget)
         verified = _sanitize(_extract_quiz(raw2))
         if len(verified["questions"]) >= max(3, len(draft["questions"]) // 2):
             return verified
@@ -227,10 +260,69 @@ def generate(user_content, kind: str, n: int) -> dict:
     return draft
 
 
+# ---------------------------------------------------------------- reading files
+MAX_PAGES = 25          # cap PDF pages / total images we send to the model
+N_CAP = 40              # the most questions we ever ask for
+
+
+def _img_part(mime: str, data: bytes) -> dict:
+    b64 = base64.b64encode(data).decode()
+    return {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}
+
+
+def _read_pdf(data: bytes):
+    """Return (text, [image_parts]). Text pages are read directly; scanned/image-only
+    pages are rendered to PNG so the vision model can read them."""
+    import fitz
+    texts, images = [], []
+    with fitz.open(stream=data, filetype="pdf") as doc:
+        for i, page in enumerate(doc):
+            if i >= MAX_PAGES:
+                break
+            t = page.get_text().strip()
+            if len(t) >= 40:
+                texts.append(t)
+            else:
+                pix = page.get_pixmap(dpi=140)
+                images.append(_img_part("image/png", pix.tobytes("png")))
+    return "\n\n".join(texts), images
+
+
+def _read_docx(data: bytes) -> str:
+    import docx
+    d = docx.Document(io.BytesIO(data))
+    lines = [p.text for p in d.paragraphs if p.text.strip()]
+    for tbl in d.tables:                       # matching worksheets often live in tables
+        for row in tbl.rows:
+            cells = [c.text.strip() for c in row.cells if c.text.strip()]
+            if cells:
+                lines.append("  |  ".join(cells))
+    return "\n".join(lines)
+
+
+def _read_upload(name: str, mime: str, data: bytes):
+    """Turn one uploaded file into (text, [image_parts])."""
+    low = (name or "").lower()
+    mime = mime or ""
+    if mime.startswith("image/") or low.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
+        return "", [_img_part(mime or "image/jpeg", data)]
+    if mime == "application/pdf" or low.endswith(".pdf"):
+        return _read_pdf(data)
+    if low.endswith(".docx"):
+        return _read_docx(data), []
+    if mime.startswith("text/") or low.endswith((".txt", ".md", ".csv")):
+        return data.decode("utf-8", "ignore"), []
+    # last resort: try to read it as text
+    try:
+        return data.decode("utf-8"), []
+    except Exception:
+        raise HTTPException(400, f"Unsupported file type: {name or 'file'}")
+
+
 # ---------------------------------------------------------------- API
 class TextIn(BaseModel):
     text: str
-    n: int = 8
+    n: int = 20
 
 
 @app.get("/api/health")
@@ -243,35 +335,46 @@ def health():
 def quiz_from_text(body: TextIn):
     if len(body.text.strip()) < 30:
         raise HTTPException(400, "Please provide a bit more text.")
-    n = max(3, min(12, body.n))
+    n = max(3, min(N_CAP, body.n))
     content = GENERATE_PROMPT.format(n=n) + "\n\nSTUDY MATERIAL:\n\n" + body.text
     return generate(content, "text", n)
 
 
-@app.post("/api/quiz/image")
-async def quiz_from_image(files: List[UploadFile] = File(...), n: int = Form(8)):
+@app.post("/api/quiz/file")
+async def quiz_from_files(files: List[UploadFile] = File(...), n: int = Form(20)):
+    """Photos AND documents (PDF, Word, txt). Reads/scans them all, then builds one quiz."""
     if not files:
-        raise HTTPException(400, "Add at least one image.")
-    parts, total = [], 0
+        raise HTTPException(400, "Add at least one file.")
+    texts, images, total = [], [], 0
     for f in files:
-        raw = await f.read()
-        total += len(raw)
-        if len(raw) > 8 * 1024 * 1024:
-            raise HTTPException(413, "One image is too large (max 8 MB each).")
-        if total > 24 * 1024 * 1024:
-            raise HTTPException(413, "Those images are too large together (max ~24 MB).")
-        mime = f.content_type or "image/jpeg"
-        if not mime.startswith("image/"):
-            raise HTTPException(400, "One of the files isn't an image.")
-        b64 = base64.b64encode(raw).decode()
-        parts.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
-    n = max(3, min(12, n))
-    lead = ("\n\nSTUDY MATERIAL is the image below. Read it, then make the questions."
-            if len(parts) == 1 else
-            f"\n\nSTUDY MATERIAL is the {len(parts)} images below. Read ALL of them "
-            "(they are pages of the same material), then make the questions.")
-    content = [{"type": "text", "text": GENERATE_PROMPT.format(n=n) + lead}] + parts
-    return generate(content, "vision", n)
+        data = await f.read()
+        total += len(data)
+        if total > 40 * 1024 * 1024:
+            raise HTTPException(413, "Those files are too large together (max ~40 MB).")
+        t, imgs = _read_upload(f.filename, f.content_type or "", data)
+        if t.strip():
+            texts.append(t.strip())
+        images.extend(imgs)
+    images = images[:MAX_PAGES]
+    if not texts and not images:
+        raise HTTPException(422, "Couldn't read anything from those files. Try clearer material.")
+
+    n = max(3, min(N_CAP, n))
+    text_blob = "\n\n".join(texts).strip()
+    if images:
+        lead = "\n\nSTUDY MATERIAL is below. Read EVERYTHING — "
+        lead += (f"{len(images)} page image(s)" if images else "")
+        lead += (" plus this text:\n\n" + text_blob) if text_blob else " — then make the questions."
+        content = [{"type": "text", "text": GENERATE_PROMPT.format(n=n) + lead}] + images
+        return generate(content, "vision", n)
+    content = GENERATE_PROMPT.format(n=n) + "\n\nSTUDY MATERIAL:\n\n" + text_blob
+    return generate(content, "text", n)
+
+
+# backwards-compatible alias
+@app.post("/api/quiz/image")
+async def quiz_from_image(files: List[UploadFile] = File(...), n: int = Form(20)):
+    return await quiz_from_files(files, n)
 
 
 # ---------------------------------------------------------------- static site

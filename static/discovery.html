@@ -112,6 +112,11 @@
     background:rgba(34,32,27,.72);color:#fff;font-size:16px;line-height:1;cursor:pointer;
     display:flex;align-items:center;justify-content:center;font-family:inherit;padding:0;}
   .thumb .rm:hover{background:var(--bad);}
+  .thumb.doc{display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:6px;padding:10px;background:var(--teal-soft);}
+  .thumb.doc .di{font-size:30px;}
+  .thumb.doc .dn{font-size:11px;color:var(--teal-dk);font-weight:600;text-align:center;
+    line-height:1.2;word-break:break-word;max-height:2.4em;overflow:hidden;}
 
   /* ---- mistake review ---- */
   .mis{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:14px;}
@@ -257,8 +262,8 @@
     </button>
     <button class="opt-card" id="optPhoto">
       <span class="ic">📷</span>
-      <span><span class="k">Photograph a page → game</span>
-        <span class="d">Snap a textbook page. The AI reads it and builds new questions.</span></span>
+      <span><span class="k">Photograph or upload → game</span>
+        <span class="d">Photos, PDFs or Word docs. The AI reads them and builds new questions on the same concepts.</span></span>
     </button>
     <button class="opt-card" id="optReview">
       <span class="ic">🚩</span>
@@ -288,14 +293,14 @@
       <span class="chip">Build a game</span>
       <button class="homelink" data-hub>← options</button>
     </div>
-    <h1 style="font-size:28px;margin-top:14px">Photograph a page</h1>
+    <h1 style="font-size:28px;margin-top:14px">Photograph or upload</h1>
     <div class="card">
       <div class="drop" id="drop">
-        <div style="font-size:38px">📷</div>
-        <div style="font-weight:700;color:var(--teal-dk);margin-top:8px">Tap to add photos of the page(s)</div>
-        <div class="muted" style="font-size:13px">pick one or several — or drag images here</div>
+        <div style="font-size:38px">📷📄</div>
+        <div style="font-weight:700;color:var(--teal-dk);margin-top:8px">Tap to add photos or documents</div>
+        <div class="muted" style="font-size:13px">photos, PDF, or Word — pick one or several, or drag them here</div>
       </div>
-      <input id="file" type="file" accept="image/*" multiple class="hide">
+      <input id="file" type="file" accept="image/*,application/pdf,.pdf,.doc,.docx,.txt,.md,.csv" multiple class="hide">
       <div id="thumbs" class="thumbs hide"></div>
       <button class="btn sec auto hide" id="addMore" style="margin-top:14px">+ Add more photos</button>
       <button class="btn" id="buildPhoto" style="margin-top:16px">Build my Space Waves game</button>
@@ -320,7 +325,7 @@
       <!-- question overlay -->
       <div class="g-q hide" id="gq">
         <div class="g-qcard">
-          <p class="qtag">Checkpoint · <span id="gqDist">100</span> m · answer to pass</p>
+          <p class="qtag">Checkpoint · <span id="gqDist">200</span> m · answer to pass</p>
           <p class="qtext" id="gqText"></p>
           <div class="opts" id="gqOpts"></div>
           <p class="fb" id="gqFb"></p>
@@ -335,7 +340,7 @@
       </div>
     </div>
     <p class="muted" style="font-size:13px;margin-top:10px;text-align:center">
-      A question every 100 m. Crash into an obstacle and you can respawn — but a
+      A question every 200 m. Crash into an obstacle and you can respawn — but a
       <b>wrong answer ends the run</b> and is saved to your mistakes.
     </p>
   </section>
@@ -592,10 +597,11 @@ const DEMO_QUIZ = {topic:'Demo · Our Solar System', questions:[
 $('buildText').onclick = async () => {
   const text = $('matText').value.trim();
   if (text.length < 30){ setStatus('textStatus','Paste at least a couple of sentences.', true); return; }
-  $('buildText').disabled = true; setStatus('textStatus','Reading it and writing questions… (~20s)');
+  $('buildText').disabled = true;
+  setStatus('textStatus','Reading it, analysing the concepts and writing new questions… this can take a minute or two on the free model.');
   try {
     const res = await fetch('/api/quiz/text', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({text, n:8})});
+      body: JSON.stringify({text, n:12})});
     if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail||'Request failed'); }
     const quiz = await res.json();
     if (!quiz.questions || !quiz.questions.length) throw new Error('No questions came back.');
@@ -613,13 +619,18 @@ $('file').onchange = e => { addPhotos(e.target.files); e.target.value = ''; };
 ['dragleave','drop'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.remove('drag'); }));
 $('drop').addEventListener('drop', e => addPhotos(e.dataTransfer.files));
 
+const DOC_RX = /\.(pdf|docx?|txt|md|csv)$/i;
+function isAllowed(f){ return f.type.startsWith('image/') || f.type === 'application/pdf' || DOC_RX.test(f.name); }
+function isImage(f){ return f.type.startsWith('image/'); }
+function docIcon(f){ const n = f.name.toLowerCase();
+  return n.endsWith('.pdf') ? '📕' : (n.endsWith('.doc')||n.endsWith('.docx')) ? '📘' : '📄'; }
 function addPhotos(list){
-  const imgs = [...list].filter(f => f.type.startsWith('image/'));
-  const skipped = [...list].length - imgs.length;
-  if (!imgs.length){ setStatus('photoStatus','Those files aren\'t images.', true); return; }
-  photos.push(...imgs);
+  const ok = [...list].filter(isAllowed);
+  const skipped = [...list].length - ok.length;
+  if (!ok.length){ setStatus('photoStatus','Add photos or documents (PDF, Word, txt).', true); return; }
+  photos.push(...ok);
   renderThumbs();
-  const s = `${photos.length} photo${photos.length>1?'s':''} ready` + (skipped ? ` · ${skipped} non-image skipped` : '') + '.';
+  const s = `${photos.length} file${photos.length>1?'s':''} ready` + (skipped ? ` · ${skipped} unsupported skipped` : '') + '.';
   setStatus('photoStatus', s);
 }
 function renderThumbs(){
@@ -630,24 +641,32 @@ function renderThumbs(){
   box.classList.toggle('hide', !has);
   photos.forEach((f, i) => {
     const t = document.createElement('div'); t.className = 'thumb';
-    const img = document.createElement('img'); img.src = URL.createObjectURL(f);
-    img.onload = () => URL.revokeObjectURL(img.src);
+    if (isImage(f)){
+      const img = document.createElement('img'); img.src = URL.createObjectURL(f);
+      img.onload = () => URL.revokeObjectURL(img.src);
+      t.appendChild(img);
+    } else {
+      t.classList.add('doc');
+      const di = document.createElement('div'); di.className = 'di'; di.textContent = docIcon(f);
+      const dn = document.createElement('div'); dn.className = 'dn'; dn.textContent = f.name;
+      t.append(di, dn);
+    }
     const tag = document.createElement('span'); tag.className = 'n'; tag.textContent = i+1;
     const x = document.createElement('button'); x.className = 'rm'; x.textContent = '×';
     x.title = 'Remove'; x.onclick = () => { photos.splice(i,1); renderThumbs();
-      setStatus('photoStatus', photos.length ? `${photos.length} photo${photos.length>1?'s':''} ready.` : ''); };
-    t.append(img, tag, x); box.appendChild(t);
+      setStatus('photoStatus', photos.length ? `${photos.length} file${photos.length>1?'s':''} ready.` : ''); };
+    t.append(tag, x); box.appendChild(t);
   });
 }
 $('buildPhoto').onclick = async () => {
-  if (!photos.length){ setStatus('photoStatus','Add at least one photo first.', true); return; }
+  if (!photos.length){ setStatus('photoStatus','Add at least one photo or document first.', true); return; }
   $('buildPhoto').disabled = true;
-  setStatus('photoStatus', `Reading ${photos.length} page${photos.length>1?'s':''} and writing questions… (~20s)`);
+  setStatus('photoStatus', `Reading ${photos.length} file${photos.length>1?'s':''}, analysing the concepts and writing new questions… this can take a minute or two on the free model.`);
   try {
     const fd = new FormData();
     photos.forEach(p => fd.append('files', p));
-    fd.append('n','8');
-    const res = await fetch('/api/quiz/image', {method:'POST', body:fd});
+    fd.append('n','12');
+    const res = await fetch('/api/quiz/file', {method:'POST', body:fd});
     if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail||'Request failed'); }
     const quiz = await res.json();
     if (!quiz.questions || !quiz.questions.length) throw new Error('No questions came back.');
@@ -668,13 +687,14 @@ function offerDemo(statusId, msg){
 }
 
 /* =====================================================================
-   SPACE WAVES  — hold to fly up, release to fall. Question every 100 m.
+   SPACE WAVES  — hold to fly up, release to fall. Question every 200 m.
    Wrong answer = death (logged). Crash into an obstacle = respawn.
    ===================================================================== */
 const cv = $('cv'), ctx = cv.getContext('2d');
 let GW = 640, GH = 440;
 const PX_PER_M = 6;            // horizontal pixels per metre
-const V_METRES = 0.16;         // metres advanced per frame (~100 m ≈ 10 s)
+const V_METRES = 0.2;          // metres advanced per frame
+const CHECK_M = 200;           // a question every 200 m
 let GAME = null;               // {topic, questions}
 let g = null;                  // live game state
 let rafId = 0;
@@ -697,7 +717,8 @@ function launchGame(quiz){
   resizeGame();
   stars = Array.from({length:70}, () => ({x:Math.random()*GW, y:Math.random()*GH, z:Math.random()*.8+.2}));
   newRun();
-  overlay('Space Waves', `Fly through ${quiz.questions.length*100} m of space. A question waits every 100 m. ` +
+  overlay('Space Waves', `Fly through ${quiz.questions.length*CHECK_M} m of space across ` +
+    `${quiz.questions.length} question${quiz.questions.length>1?'s':''} — one every ${CHECK_M} m. ` +
     `Crash and you can respawn — but a wrong answer ends the run.`, [['Launch 🚀', beginRun]]);
 }
 
@@ -729,9 +750,9 @@ function spawnObstacles(){
   const spacingM = 16;
   while (g.lastObstacleM < aheadM){
     g.lastObstacleM += spacingM;
-    // don't drop an obstacle right on a checkpoint (multiple of 100)
-    const nearCheckpoint = (g.lastObstacleM % 100) < 8 || (g.lastObstacleM % 100) > 92;
-    if (nearCheckpoint) continue;
+    // don't drop an obstacle right on a checkpoint
+    const intoBlock = g.lastObstacleM % CHECK_M;
+    if (intoBlock < 8 || intoBlock > CHECK_M - 8) continue;
     const gapH = Math.max(120, 190 - g.dist*0.04);
     const gapY = 60 + Math.random()*(GH-120-gapH);
     g.obstacles.push({m:g.lastObstacleM, gapY, gapH, w:20});
@@ -777,9 +798,9 @@ function update(){
     }
   }
 
-  // checkpoint question every 100 m
+  // checkpoint question every CHECK_M metres
   if (g.nextQ < GAME.questions.length){
-    const target = (g.nextQ+1)*100;
+    const target = (g.nextQ+1)*CHECK_M;
     if (g.dist >= target){ askGameQuestion(); return; }
   } else {
     win(); return;
@@ -809,12 +830,12 @@ function draw(){
 
   // checkpoint marker line for the next question
   if (g.nextQ < GAME.questions.length){
-    const cx = px + ((g.nextQ+1)*100 - g.dist)*PX_PER_M;
+    const cx = px + ((g.nextQ+1)*CHECK_M - g.dist)*PX_PER_M;
     if (cx > 0 && cx < GW){
       ctx.strokeStyle = 'rgba(126,240,208,.5)'; ctx.setLineDash([6,8]); ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(cx,0); ctx.lineTo(cx,GH); ctx.stroke(); ctx.setLineDash([]);
       ctx.fillStyle = '#7ef0d0'; ctx.font = 'bold 12px Inter, sans-serif';
-      ctx.fillText(`${(g.nextQ+1)*100}m`, cx+5, 18);
+      ctx.fillText(`${(g.nextQ+1)*CHECK_M}m`, cx+5, 18);
     }
   }
 
@@ -854,7 +875,7 @@ function respawn(){
 function askGameQuestion(){
   g.paused = true; g.awaitingQ = true;
   const q = GAME.questions[g.nextQ];
-  $('gqDist').textContent = (g.nextQ+1)*100;
+  $('gqDist').textContent = (g.nextQ+1)*CHECK_M;
   $('gqText').textContent = q.prompt;
   $('gqFb').textContent = ''; $('gqFb').className = 'fb';
   $('hudQ').textContent = g.nextQ;
@@ -890,7 +911,7 @@ function gameAnswer(idx, btn, box, q){
       options: q.options,
       chosen: idx, answer: q.answer,
       explain: q.explain || '',
-      distance: (g.nextQ+1)*100,
+      distance: (g.nextQ+1)*CHECK_M,
       when: new Date().toISOString(),
     });
     setTimeout(() => {
@@ -908,7 +929,7 @@ function gameAnswer(idx, btn, box, q){
 function win(){
   g.running = false; stopGame();
   overlay(`🏆 You made it, ${childName}!`, `All ${GAME.questions.length} checkpoints cleared across ` +
-    `${GAME.questions.length*100} m of space. Every answer correct.`, [
+    `${GAME.questions.length*CHECK_M} m of space. Every answer correct.`, [
       ['Play again', () => { newRun(); beginRun(); }],
       ['Back to options', goHub, 'ghost'],
     ]);
