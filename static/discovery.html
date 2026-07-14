@@ -102,6 +102,16 @@
     padding:30px;text-align:center;cursor:pointer;transition:.12s;}
   .drop:hover{background:#CFE6E0}
   .drop.drag{background:#BFE0D8}
+  .thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:10px;margin-top:14px;}
+  .thumb{position:relative;border-radius:12px;overflow:hidden;border:1px solid var(--line);
+    aspect-ratio:1;background:#fff;}
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+  .thumb .n{position:absolute;left:5px;bottom:5px;background:rgba(34,32,27,.72);color:#fff;
+    font-size:11px;font-weight:700;padding:2px 7px;border-radius:99px;}
+  .thumb .rm{position:absolute;top:5px;right:5px;width:24px;height:24px;border-radius:50%;border:none;
+    background:rgba(34,32,27,.72);color:#fff;font-size:16px;line-height:1;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;font-family:inherit;padding:0;}
+  .thumb .rm:hover{background:var(--bad);}
 
   /* ---- mistake review ---- */
   .mis{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:14px;}
@@ -282,11 +292,12 @@
     <div class="card">
       <div class="drop" id="drop">
         <div style="font-size:38px">📷</div>
-        <div style="font-weight:700;color:var(--teal-dk);margin-top:8px">Tap to add a photo of the page</div>
-        <div class="muted" style="font-size:13px">or drag an image here</div>
+        <div style="font-weight:700;color:var(--teal-dk);margin-top:8px">Tap to add photos of the page(s)</div>
+        <div class="muted" style="font-size:13px">pick one or several — or drag images here</div>
       </div>
-      <input id="file" type="file" accept="image/*" class="hide">
-      <img id="preview" class="hide" style="width:100%;border-radius:12px;margin-top:14px;border:1px solid var(--line)">
+      <input id="file" type="file" accept="image/*" multiple class="hide">
+      <div id="thumbs" class="thumbs hide"></div>
+      <button class="btn sec auto hide" id="addMore" style="margin-top:14px">+ Add more photos</button>
       <button class="btn" id="buildPhoto" style="margin-top:16px">Build my Space Waves game</button>
       <div class="status" id="photoStatus"></div>
     </div>
@@ -593,24 +604,49 @@ $('buildText').onclick = async () => {
   finally { $('buildText').disabled = false; }
 };
 
-/* ---------- photo → game ---------- */
-let photo = null;
+/* ---------- photo → game (multiple photos, add/remove) ---------- */
+let photos = [];                                   // File[]
 $('drop').onclick = () => $('file').click();
-$('file').onchange = e => loadPhoto(e.target.files[0]);
+$('addMore').onclick = () => $('file').click();
+$('file').onchange = e => { addPhotos(e.target.files); e.target.value = ''; };
 ['dragenter','dragover'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.add('drag'); }));
 ['dragleave','drop'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.remove('drag'); }));
-$('drop').addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) loadPhoto(f); });
-function loadPhoto(f){
-  if (!f || !f.type.startsWith('image/')){ setStatus('photoStatus','That file isn\'t an image.', true); return; }
-  photo = f; const r = new FileReader();
-  r.onload = () => { $('preview').src = r.result; $('preview').classList.remove('hide'); $('drop').classList.add('hide'); setStatus('photoStatus',''); };
-  r.readAsDataURL(f);
+$('drop').addEventListener('drop', e => addPhotos(e.dataTransfer.files));
+
+function addPhotos(list){
+  const imgs = [...list].filter(f => f.type.startsWith('image/'));
+  const skipped = [...list].length - imgs.length;
+  if (!imgs.length){ setStatus('photoStatus','Those files aren\'t images.', true); return; }
+  photos.push(...imgs);
+  renderThumbs();
+  const s = `${photos.length} photo${photos.length>1?'s':''} ready` + (skipped ? ` · ${skipped} non-image skipped` : '') + '.';
+  setStatus('photoStatus', s);
+}
+function renderThumbs(){
+  const box = $('thumbs'); box.innerHTML = '';
+  const has = photos.length > 0;
+  $('drop').classList.toggle('hide', has);
+  $('addMore').classList.toggle('hide', !has);
+  box.classList.toggle('hide', !has);
+  photos.forEach((f, i) => {
+    const t = document.createElement('div'); t.className = 'thumb';
+    const img = document.createElement('img'); img.src = URL.createObjectURL(f);
+    img.onload = () => URL.revokeObjectURL(img.src);
+    const tag = document.createElement('span'); tag.className = 'n'; tag.textContent = i+1;
+    const x = document.createElement('button'); x.className = 'rm'; x.textContent = '×';
+    x.title = 'Remove'; x.onclick = () => { photos.splice(i,1); renderThumbs();
+      setStatus('photoStatus', photos.length ? `${photos.length} photo${photos.length>1?'s':''} ready.` : ''); };
+    t.append(img, tag, x); box.appendChild(t);
+  });
 }
 $('buildPhoto').onclick = async () => {
-  if (!photo){ setStatus('photoStatus','Add a photo first.', true); return; }
-  $('buildPhoto').disabled = true; setStatus('photoStatus','Reading the page and writing questions… (~20s)');
+  if (!photos.length){ setStatus('photoStatus','Add at least one photo first.', true); return; }
+  $('buildPhoto').disabled = true;
+  setStatus('photoStatus', `Reading ${photos.length} page${photos.length>1?'s':''} and writing questions… (~20s)`);
   try {
-    const fd = new FormData(); fd.append('file', photo); fd.append('n','8');
+    const fd = new FormData();
+    photos.forEach(p => fd.append('files', p));
+    fd.append('n','8');
     const res = await fetch('/api/quiz/image', {method:'POST', body:fd});
     if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail||'Request failed'); }
     const quiz = await res.json();

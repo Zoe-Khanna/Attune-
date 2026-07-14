@@ -170,7 +170,12 @@ def _extract_quiz(text: str) -> dict:
     a, z = payload.find("{"), payload.rfind("}")
     if a != -1 and z != -1:
         payload = payload[a:z + 1]
-    return json.loads(payload)
+    try:
+        return json.loads(payload)
+    except (json.JSONDecodeError, ValueError):
+        # Model didn't return usable JSON (e.g. an unreadable photo). Fall through
+        # to an empty quiz so callers raise the friendly "couldn't build" message.
+        return {}
 
 
 def _sanitize(quiz: dict) -> dict:
@@ -244,21 +249,28 @@ def quiz_from_text(body: TextIn):
 
 
 @app.post("/api/quiz/image")
-async def quiz_from_image(file: UploadFile = File(...), n: int = Form(8)):
-    raw = await file.read()
-    if len(raw) > 8 * 1024 * 1024:
-        raise HTTPException(413, "Image too large (max 8 MB).")
-    mime = file.content_type or "image/jpeg"
-    if not mime.startswith("image/"):
-        raise HTTPException(400, "That file isn't an image.")
-    b64 = base64.b64encode(raw).decode()
+async def quiz_from_image(files: List[UploadFile] = File(...), n: int = Form(8)):
+    if not files:
+        raise HTTPException(400, "Add at least one image.")
+    parts, total = [], 0
+    for f in files:
+        raw = await f.read()
+        total += len(raw)
+        if len(raw) > 8 * 1024 * 1024:
+            raise HTTPException(413, "One image is too large (max 8 MB each).")
+        if total > 24 * 1024 * 1024:
+            raise HTTPException(413, "Those images are too large together (max ~24 MB).")
+        mime = f.content_type or "image/jpeg"
+        if not mime.startswith("image/"):
+            raise HTTPException(400, "One of the files isn't an image.")
+        b64 = base64.b64encode(raw).decode()
+        parts.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
     n = max(3, min(12, n))
-    content = [
-        {"type": "text",
-         "text": GENERATE_PROMPT.format(n=n) +
-                 "\n\nSTUDY MATERIAL is the image below. Read it, then make the questions."},
-        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
-    ]
+    lead = ("\n\nSTUDY MATERIAL is the image below. Read it, then make the questions."
+            if len(parts) == 1 else
+            f"\n\nSTUDY MATERIAL is the {len(parts)} images below. Read ALL of them "
+            "(they are pages of the same material), then make the questions.")
+    content = [{"type": "text", "text": GENERATE_PROMPT.format(n=n) + lead}] + parts
     return generate(content, "vision", n)
 
 
