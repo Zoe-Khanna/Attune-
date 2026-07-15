@@ -275,6 +275,11 @@
       <span><span class="k">Photograph or upload → game</span>
         <span class="d">Photos, PDFs or Word docs. The AI reads them and builds new questions on the same concepts.</span></span>
     </button>
+    <button class="opt-card" id="optCorrect">
+      <span class="ic">✅</span>
+      <span><span class="k">Answers I got right <span id="corCount" class="muted"></span></span>
+        <span class="d">Every question answered correctly, kept so you can see your progress.</span></span>
+    </button>
     <button class="opt-card" id="optReview">
       <span class="ic">🚩</span>
       <span><span class="k">Review mistakes <span id="misCount" class="muted"></span></span>
@@ -391,6 +396,18 @@
     <button class="btn ghost" id="clearMis" style="margin-top:20px">Clear this child's mistakes</button>
   </section>
 
+  <!-- =============== SCREEN 11 · CORRECT-ANSWER HISTORY =============== -->
+  <section id="screen-correct" class="hide">
+    <div class="topbar">
+      <span class="chip">Got right</span>
+      <button class="homelink" data-hub>← options</button>
+    </div>
+    <h1 style="font-size:28px;margin-top:14px" id="corTitle">Answers you got right</h1>
+    <p class="lead" id="corLead"></p>
+    <div id="corList"></div>
+    <button class="btn ghost" id="clearCor" style="margin-top:20px">Clear this list</button>
+  </section>
+
 </div>
 
 <script>
@@ -399,7 +416,7 @@
    ===================================================================== */
 const $ = id => document.getElementById(id);
 const SCREENS = ['screen-start','screen-intro','screen-break','screen-q','screen-result',
-                 'screen-hub','screen-text','screen-photo','screen-choose','screen-game','screen-review'];
+                 'screen-hub','screen-text','screen-photo','screen-choose','screen-game','screen-review','screen-correct'];
 function show(id){
   SCREENS.forEach(s => $(s).classList.toggle('hide', s !== id));
   if (id !== 'screen-game') stopGame();
@@ -426,6 +443,17 @@ function loadMistakes(){
 function saveMistake(m){
   const list = loadMistakes(); list.unshift(m);
   localStorage.setItem(childKey+'_mistakes', JSON.stringify(list));
+}
+function loadCorrect(){
+  try { return JSON.parse(localStorage.getItem(childKey+'_correct')||'[]'); } catch(e){ return []; }
+}
+function saveCorrect(m){
+  const list = loadCorrect();
+  const i = list.findIndex(x => x.question === m.question);   // one entry per distinct question
+  if (i >= 0){ const [it] = list.splice(i,1); it.times = (it.times||1)+1; it.when = m.when; list.unshift(it); }
+  else { m.times = 1; list.unshift(m); }
+  if (list.length > 300) list.length = 300;
+  localStorage.setItem(childKey+'_correct', JSON.stringify(list));
 }
 
 /* ---------- session state ---------- */
@@ -725,9 +753,12 @@ function goHub(){
   $('hubTitle').textContent = `What next, ${childName}?`;
   const n = loadMistakes().length;
   $('misCount').textContent = n ? `(${n})` : '';
+  const cc = loadCorrect().length;
+  $('corCount').textContent = cc ? `(${cc})` : '';
   $('profState').textContent = localStorage.getItem(childKey+'_profile') ? '' : '(none yet)';
   show('screen-hub');
 }
+$('optCorrect').onclick = () => renderCorrect();
 $('switchChild').onclick = () => { $('name').value=''; refreshReturning(); show('screen-start'); };
 $('optProfile').onclick = () => {
   const raw = localStorage.getItem(childKey+'_profile');
@@ -893,6 +924,22 @@ function chooseGame(quiz){
 $('pickWaves').onclick = () => startWaves();
 $('pickRise').onclick  = () => startRise();
 
+/* ---------- varied, right-answer-aware praise ---------- */
+const PRAISE = ['Brilliant','Amazing focus','You crushed it','Superstar effort','Fantastic thinking',
+  'Way to go','Incredible','You\'re on fire','Sharp work','Outstanding','Bravo','Genius move',
+  'Nailed it','Unstoppable','Big brain energy','So close-reading','Champion stuff'];
+let _lastPraise = -1;
+function praise(){
+  let i; do { i = Math.floor(Math.random()*PRAISE.length); } while (i === _lastPraise && PRAISE.length > 1);
+  _lastPraise = i; return PRAISE[i];
+}
+function shortQ(s){ return s.length > 64 ? s.slice(0,61) + '…' : s; }
+function rightSummary(list){
+  if (!list || !list.length) return '';
+  if (list.length === 1) return `You got “${shortQ(list[0].question)}” right.`;
+  return `You got ${list.length} right — like “${shortQ(list[0].question)}”.`;
+}
+
 /* ---------- shared: checkpoint question ---------- */
 function askGameQuestion(){
   g.paused = true; g.awaitingQ = true;
@@ -919,6 +966,11 @@ function gameAnswer(idx, btn, box, q){
   fb.textContent = (correct ? 'Correct — keep going! ' : 'Wrong — the run ends here. ') + (q.explain||'');
 
   if (correct){
+    // remember this win — for the praise, and for the lasting "got right" history
+    const rec = {topic: GAME.topic || activeName, game: activeName,
+      question: q.prompt, answer: q.options[q.answer], when: new Date().toISOString()};
+    (g.correct = g.correct || []).push(rec);
+    saveCorrect(rec);
     setTimeout(() => {
       $('gq').classList.add('hide');
       g.nextQ++; $('hudQ').textContent = g.nextQ;
@@ -935,8 +987,10 @@ function gameAnswer(idx, btn, box, q){
     });
     setTimeout(() => {
       $('gq').classList.add('hide'); stopGame();
-      overlay('☄️ Wrong answer', `Out at question ${g.nextQ+1} of ${GAME.questions.length}. ` +
-        `This mistake is saved so ${childName} can review it.`, [
+      const c = g.correct || [];
+      const kudos = c.length ? `${praise()}, ${childName}! ${rightSummary(c)} ` : '';
+      overlay('☄️ Run over', `${kudos}That last one wasn't right — it's saved so you can learn from it.`, [
+          ['See what I got right ✅', renderCorrect],
           ['Review this mistake 🚩', renderReview],
           ['Back to options', goHub, 'ghost'],
         ]);
@@ -945,8 +999,11 @@ function gameAnswer(idx, btn, box, q){
 }
 function winGame(){
   stopGame();
-  overlay(`🏆 You made it, ${childName}!`, `All ${GAME.questions.length} checkpoints cleared — ` +
-    `${GAME.questions.length*CHECK} m in ${activeName}, every answer correct.`, [
+  const c = g.correct || [];
+  overlay(`🏆 ${praise()}, ${childName}!`,
+    `Perfect run — all ${GAME.questions.length} right across ${GAME.questions.length*CHECK} m of ${activeName}. ` +
+    `${rightSummary(c)}`, [
+      ['See what I got right ✅', renderCorrect],
       ['Play again', activePlayAgain],
       ['Back to options', goHub, 'ghost'],
     ]);
@@ -1043,7 +1100,7 @@ function startWaves(){
 function wavesNew(){
   g = { dist:0, speed:V_METRES, nextQ:0, y:GH/2, vy:0, trail:[], terrain:[],
         genM:0, cenCur:GH/2, halfCur:100, grace:0, running:false, paused:true, awaitingQ:false,
-        best:loadBest() };
+        correct:[], best:loadBest() };
 }
 function wavesBegin(){ hideOverlay(); $('gq').classList.add('hide');
   g.running = true; g.paused = false; rafId = requestAnimationFrame(wavesLoop); }
@@ -1158,7 +1215,7 @@ function startRise(){
 }
 function riseNew(){
   g = { dist:0, speed:V_RISE, nextQ:0, obstacles:[], spawnTimer:40, grace:0, score:0,
-        shieldX:GW/2, shieldW:104, running:false, paused:true, awaitingQ:false, best:loadBest() };
+        shieldX:GW/2, shieldW:104, running:false, paused:true, awaitingQ:false, correct:[], best:loadBest() };
 }
 function riseBegin(){ hideOverlay(); $('gq').classList.add('hide');
   g.running = true; g.paused = false; rafId = requestAnimationFrame(riseLoop); }
@@ -1276,6 +1333,35 @@ function renderReview(){
 $('clearMis').onclick = () => {
   if (confirm(`Clear all saved mistakes for ${childName}?`)){
     localStorage.removeItem(childKey+'_mistakes'); renderReview();
+  }
+};
+
+/* ---------- correct-answer history (persists across sessions) ---------- */
+function renderCorrect(){
+  const list = loadCorrect();
+  $('corTitle').textContent = `${childName}'s right answers`;
+  $('corLead').textContent = list.length
+    ? `Every question ${childName} has answered correctly — ${list.length} so far. Proof of what they've learned.`
+    : 'No right answers saved yet. Play a game and every correct answer lands here.';
+  const box = $('corList'); box.innerHTML = '';
+  $('clearCor').classList.toggle('hide', !list.length);
+  if (!list.length){ box.innerHTML = '<div class="empty">Play a game to start collecting right answers ✅</div>'; show('screen-correct'); return; }
+  list.forEach(m => {
+    const el = document.createElement('div'); el.className = 'mis';
+    const d = new Date(m.when);
+    const when = isNaN(d) ? '' : d.toLocaleDateString(undefined,{month:'short',day:'numeric'});
+    el.innerHTML =
+      `<p class="meta">${escapeHtml(m.topic)}${m.game ? ' · '+escapeHtml(m.game) : ''}` +
+        `${m.times>1 ? ' · right '+m.times+'×' : ''} · ${when}</p>` +
+      `<p class="q">${escapeHtml(m.question)}</p>` +
+      `<div class="ans right">✅ ${escapeHtml(m.answer)}</div>`;
+    box.appendChild(el);
+  });
+  show('screen-correct');
+}
+$('clearCor').onclick = () => {
+  if (confirm(`Clear the right-answers list for ${childName}?`)){
+    localStorage.removeItem(childKey+'_correct'); renderCorrect();
   }
 };
 function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
