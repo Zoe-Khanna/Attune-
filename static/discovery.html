@@ -260,6 +260,11 @@
       <span><span class="k">View profile <span id="profState" class="muted"></span></span>
         <span class="d">Attention span, strengths, motivation and how they like to learn.</span></span>
     </button>
+    <button class="opt-card" id="optGames">
+      <span class="ic">🎮</span>
+      <span><span class="k">My games <span id="gamesCount" class="muted"></span></span>
+        <span class="d">Every game you've made, saved to play again — each one harder than the last.</span></span>
+    </button>
     <button class="opt-card" id="optDiscovery">
       <span class="ic">🧠</span>
       <span><span class="k">New discovery session</span>
@@ -396,6 +401,17 @@
     <button class="btn ghost" id="clearMis" style="margin-top:20px">Clear this child's mistakes</button>
   </section>
 
+  <!-- =============== SCREEN 12 · SAVED GAMES =============== -->
+  <section id="screen-games" class="hide">
+    <div class="topbar">
+      <span class="chip">My games</span>
+      <button class="homelink" data-hub>← options</button>
+    </div>
+    <h1 style="font-size:28px;margin-top:14px" id="gamesTitle">My games</h1>
+    <p class="lead" id="gamesLead"></p>
+    <div id="gamesList"></div>
+  </section>
+
   <!-- =============== SCREEN 11 · CORRECT-ANSWER HISTORY =============== -->
   <section id="screen-correct" class="hide">
     <div class="topbar">
@@ -416,7 +432,7 @@
    ===================================================================== */
 const $ = id => document.getElementById(id);
 const SCREENS = ['screen-start','screen-intro','screen-break','screen-q','screen-result',
-                 'screen-hub','screen-text','screen-photo','screen-choose','screen-game','screen-review','screen-correct'];
+                 'screen-hub','screen-text','screen-photo','screen-choose','screen-game','screen-review','screen-correct','screen-games'];
 function show(id){
   SCREENS.forEach(s => $(s).classList.toggle('hide', s !== id));
   if (id !== 'screen-game') stopGame();
@@ -454,6 +470,22 @@ function saveCorrect(m){
   else { m.times = 1; list.unshift(m); }
   if (list.length > 300) list.length = 300;
   localStorage.setItem(childKey+'_correct', JSON.stringify(list));
+}
+/* saved games (replayable) + a per-child difficulty that climbs each new game */
+function loadGames(){ try { return JSON.parse(localStorage.getItem(childKey+'_games')||'[]'); } catch(e){ return []; } }
+function saveGame(quiz){
+  const list = loadGames();
+  const sig = (quiz.topic||'') + '|' + ((quiz.questions[0]||{}).prompt||'') + '|' + quiz.questions.length;
+  if (list.some(g => g.sig === sig)) return;                  // don't store the same game twice
+  list.unshift({sig, topic:quiz.topic, questions:quiz.questions,
+                difficulty:quiz.difficulty||1, when:new Date().toISOString()});
+  if (list.length > 30) list.length = 30;
+  localStorage.setItem(childKey+'_games', JSON.stringify(list));
+}
+function bumpDifficulty(){
+  const d = Math.max(1, +(localStorage.getItem(childKey+'_difficulty')||1));
+  localStorage.setItem(childKey+'_difficulty', d+1);         // next generated game is harder
+  return d;
 }
 
 /* ---------- session state ---------- */
@@ -755,6 +787,8 @@ function goHub(){
   $('misCount').textContent = n ? `(${n})` : '';
   const cc = loadCorrect().length;
   $('corCount').textContent = cc ? `(${cc})` : '';
+  const gc = loadGames().length;
+  $('gamesCount').textContent = gc ? `(${gc})` : '';
   $('profState').textContent = localStorage.getItem(childKey+'_profile') ? '' : '(none yet)';
   show('screen-hub');
 }
@@ -914,11 +948,17 @@ window.addEventListener('resize', () => { if (!$('screen-game').classList.contai
 function stopGame(){ if (rafId) cancelAnimationFrame(rafId); rafId = 0; if (g){ g.running = false; try{ saveBest(); }catch(e){} } }
 
 /* ---------- choose a game (same quiz, two ways to play) ---------- */
+let gameDifficulty = 1;
 function chooseGame(quiz){
   GAME = quiz;
+  if (quiz.difficulty == null){                 // a freshly generated game — assign & save it
+    quiz.difficulty = bumpDifficulty();
+    saveGame(quiz);
+  }
+  gameDifficulty = quiz.difficulty || 1;
   const nq = quiz.questions.length;
-  $('chooseLead').textContent = `${nq} question${nq>1?'s':''} on “${quiz.topic||'your material'}”. ` +
-    `Pick how you want to play — same questions, different game.`;
+  $('chooseLead').textContent = `${nq} question${nq>1?'s':''} on “${quiz.topic||'your material'}” · ` +
+    `difficulty ${gameDifficulty}. Pick how you want to play — same questions, different game.`;
   show('screen-choose');
 }
 $('pickWaves').onclick = () => startWaves();
@@ -1098,7 +1138,8 @@ function startWaves(){
     `Hold to climb, release to dive. Crash and respawn; a wrong answer ends the run.`, [['Launch 🚀', wavesBegin]]);
 }
 function wavesNew(){
-  g = { dist:0, speed:V_METRES, nextQ:0, y:GH/2, vy:0, trail:[], terrain:[],
+  const dm = 1 + (gameDifficulty-1)*0.1;             // harder games fly faster
+  g = { dist:0, speed:V_METRES*dm, nextQ:0, y:GH/2, vy:0, trail:[], terrain:[],
         genM:0, cenCur:GH/2, halfCur:100, grace:0, running:false, paused:true, awaitingQ:false,
         correct:[], best:loadBest() };
 }
@@ -1115,7 +1156,7 @@ function wavesGen(){
     const nearCk = (m1 % CHECK) < 44 || (m0 % CHECK) > CHECK-22;
     if (nearCk){ g.cenCur = GH/2; g.halfCur = GH/2 - 38; }
     else {
-      const half = Math.max(78, 118 - g.dist*0.012);         // gap slowly narrows
+      const half = Math.max(64, 118 - g.dist*0.012 - (gameDifficulty-1)*7);  // harder = tighter gap
       g.halfCur = half + (Math.random()*2-1)*10;
       g.cenCur += (Math.random()*2-1)*30;                     // gentle drift
       g.cenCur = Math.max(g.halfCur+26, Math.min(GH-g.halfCur-26, g.cenCur));
@@ -1201,7 +1242,10 @@ function wavesRespawn(){
    ===================================================================== */
 const V_RISE = 0.16;
 const RISE_BG = ['#7ec6e0','#bcd99a','#c6d16f','#e7c89a','#e3a9a6','#b7a9e0','#8fd7c6','#e6cf7a'];
-const riseLevel = () => Math.min(45, Math.floor(g.dist/40)+1);
+// A "level" is a checkpoint (question). Clearing them all IS finishing the game,
+// so the counter reaches its total exactly when the run is won.
+const riseLevel = () => Math.min(GAME.questions.length, g.nextQ + 1);
+const riseLevels = () => GAME.questions.length;
 
 function startRise(){
   CHECK = 150; activeGameId = 'rise'; activeName = 'Rise Up';
@@ -1229,11 +1273,11 @@ function riseUpdate(){
   if (g.dist > g.best) g.best = g.dist;
   if (g.grace > 0) g.grace--;
   if (--g.spawnTimer <= 0){
-    g.spawnTimer = Math.max(18, 42 - g.dist*0.04);
+    g.spawnTimer = Math.max(14, 42 - g.dist*0.04 - (gameDifficulty-1)*2.5);   // harder = more objects
     const r = 15 + Math.random()*9;
     g.obstacles.push({ x: 34 + Math.random()*(GW-68), y:-24, py:-24, r,
-      vy: 1.9 + Math.random()*1.1 + g.dist*0.0025, vx:0, spin:Math.random()*6,
-      shape: Math.random()<0.72 ? 'sq' : 'ball', dealt:false });
+      vy: (1.9 + Math.random()*1.1 + g.dist*0.0025) * (1 + (gameDifficulty-1)*0.07),  // and faster
+      vx:0, spin:Math.random()*6, shape: Math.random()<0.72 ? 'sq' : 'ball', dealt:false });
   }
   const sy = SHIELD_Y(), b = BALLOON();
   for (const o of g.obstacles){
@@ -1281,14 +1325,14 @@ function riseDraw(){
     ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(b.x, b.y, b.r+9, 0, 7); ctx.stroke();
   }
-  // HUD: SCORE (top-left), LEVEL x/45 (top-right)
+  // HUD: SCORE (top-left), LEVEL x/total (top-right) — total = number of questions
   ctx.fillStyle = '#1b1b1b'; ctx.strokeStyle = '#1b1b1b'; ctx.lineWidth = 2;
   ctx.textAlign='left';
   ctx.font = "800 26px Inter, sans-serif"; ctx.fillText(String(Math.floor(g.score)), 22, 42);
   ctx.font = "700 11px Inter, sans-serif"; ctx.fillText('SCORE', 24, 60);
   ctx.beginPath(); ctx.moveTo(20,50); ctx.lineTo(74,50); ctx.stroke();
   ctx.textAlign='right';
-  ctx.font = "800 22px Inter, sans-serif"; ctx.fillText(`${level} / 45`, GW-22, 42);
+  ctx.font = "800 22px Inter, sans-serif"; ctx.fillText(`${level} / ${riseLevels()}`, GW-22, 42);
   ctx.font = "700 11px Inter, sans-serif"; ctx.fillText('LEVEL', GW-24, 60);
   ctx.beginPath(); ctx.moveTo(GW-92,50); ctx.lineTo(GW-20,50); ctx.stroke();
   if (g.nextQ < GAME.questions.length){
@@ -1364,6 +1408,31 @@ $('clearCor').onclick = () => {
     localStorage.removeItem(childKey+'_correct'); renderCorrect();
   }
 };
+
+/* ---------- saved games — replay any past game ---------- */
+function renderGames(){
+  const list = loadGames();
+  $('gamesTitle').textContent = `${childName}'s games`;
+  $('gamesLead').textContent = list.length
+    ? `Every game ${childName} has made — tap Play to try one again. Newer games are harder.`
+    : 'No games yet. Build one from a topic, some text, or a photo and it will be saved here.';
+  const box = $('gamesList'); box.innerHTML = '';
+  if (!list.length){ box.innerHTML = '<div class="empty">Build a game and it lands here to replay ✨</div>'; show('screen-games'); return; }
+  list.forEach(gm => {
+    const d = new Date(gm.when);
+    const when = isNaN(d) ? '' : d.toLocaleDateString(undefined,{month:'short',day:'numeric'});
+    const el = document.createElement('div'); el.className = 'mis';
+    el.innerHTML =
+      `<p class="meta">difficulty ${gm.difficulty||1} · ${gm.questions.length} question${gm.questions.length>1?'s':''} · ${when}</p>` +
+      `<p class="q">${escapeHtml(gm.topic || 'Practice game')}</p>`;
+    const play = document.createElement('button');
+    play.className = 'btn'; play.style.marginTop = '4px'; play.textContent = 'Play ▶';
+    play.onclick = () => chooseGame({topic:gm.topic, questions:gm.questions, difficulty:gm.difficulty||1});
+    el.appendChild(play); box.appendChild(el);
+  });
+  show('screen-games');
+}
+$('optGames').onclick = () => renderGames();
 function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
 /* ---------- boot ---------- */
