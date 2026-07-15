@@ -81,6 +81,7 @@
   .opt:hover{border-color:var(--teal);background:var(--teal-soft)}
   .opt.right{border-color:var(--good);background:#E4F1EA}
   .opt.wrong{border-color:var(--bad);background:#F6E3DD}
+  .opt.sel{border-color:var(--teal);background:var(--teal-soft)}
   .opt:disabled{cursor:default}
   .fb{margin-top:16px;font-size:15px;font-weight:600;min-height:22px;}
   .fb.good{color:var(--good)} .fb.bad{color:var(--bad)}
@@ -189,7 +190,7 @@
       <p class="lead" id="introSub" style="margin-bottom:22px"></p>
       <button class="btn" id="readyBtn">I'm ready</button>
     </div>
-    <p class="foot">3 blocks · 5 quick games each · patterns, reading &amp; number puzzles.</p>
+    <p class="foot">3 game blocks + 1 “about you” block · 5 questions each · patterns, reading, number puzzles &amp; preferences.</p>
   </section>
 
   <!-- =============== SCREEN 3 · BLOCK BREAK =============== -->
@@ -254,6 +255,11 @@
     <h1 id="hubTitle" style="font-size:30px;margin-top:14px">What next?</h1>
     <p class="lead">Turn anything into a Space Waves game, or run discovery again.</p>
 
+    <button class="opt-card" id="optProfile">
+      <span class="ic">📋</span>
+      <span><span class="k">View profile <span id="profState" class="muted"></span></span>
+        <span class="d">Attention span, strengths, motivation and how they like to learn.</span></span>
+    </button>
     <button class="opt-card" id="optDiscovery">
       <span class="ic">🧠</span>
       <span><span class="k">New discovery session</span>
@@ -457,6 +463,54 @@ const DOMAIN_META = {
   maths:{label:'Number game', key:'Mathematics', icon:'🔢'},
 };
 
+/* ---------- block 4: preferences (no right/wrong — these build the profile) ---------- */
+const PREFS = [
+  {dim:'attention', q:'When you\'re doing something you like, how long can you stay focused before you need a break?',
+   options:[
+     {label:'Just a few minutes', value:'a few minutes', span:5},
+     {label:'About 10 minutes', value:'about 10 minutes', span:10},
+     {label:'About 20 minutes', value:'about 20 minutes', span:20},
+     {label:'A long time — I get absorbed', value:'30+ minutes', span:35},
+   ]},
+  {dim:'motivation', q:'What makes you want to keep going?',
+   options:[
+     {label:'Earning points & rewards', value:'Rewards'},
+     {label:'Beating my own best score', value:'Mastery'},
+     {label:'Finishing the whole thing', value:'Completion'},
+     {label:'Learning something new', value:'Curiosity'},
+   ]},
+  {dim:'sensory', q:'Where do you focus best?',
+   options:[
+     {label:'Somewhere quiet', value:'Quiet'},
+     {label:'With background music or sound', value:'Sound'},
+     {label:'With something to fidget with', value:'Touch'},
+     {label:'When I can move around', value:'Movement'},
+   ]},
+  {dim:'switching', q:'How do you like to work?',
+   options:[
+     {label:'One thing at a time', value:'Single-focus'},
+     {label:'Switching between a few things', value:'Task-switcher'},
+     {label:'Short bursts with breaks', value:'Burst worker'},
+     {label:'It doesn\'t matter to me', value:'Flexible'},
+   ]},
+  {dim:'challenge', q:'When a question is hard, you\'d rather…',
+   options:[
+     {label:'Take my time to get it right', value:'Accuracy-first'},
+     {label:'Get a hint and keep going', value:'Guided'},
+     {label:'Try fast, even if I miss', value:'Speed-first'},
+     {label:'Skip it and come back later', value:'Return later'},
+   ]},
+];
+const TOTAL_BLOCKS = BLOCKS.length + 1;                 // 3 game blocks + 1 preferences block
+const blockLen = b => b < BLOCKS.length ? BLOCKS[b].length : PREFS.length;
+const prefResults = {};
+const MOTIV_TXT = {Rewards:'Points and rewards keep them going.', Mastery:'Driven by beating their own best.',
+  Completion:'Motivated by finishing what they start.', Curiosity:'Motivated by learning something new.'};
+const SENS_TXT = {Quiet:'Focuses best somewhere quiet.', Sound:'Likes background music or sound while working.',
+  Touch:'Focuses better with something to fidget with.', Movement:'Focuses best when able to move around.'};
+const WORK_TXT = {'Single-focus':'Prefers one thing at a time.', 'Task-switcher':'Likes switching between a few tasks.',
+  'Burst worker':'Works best in short bursts with breaks.', Flexible:'Comfortable working any way.'};
+
 /* ---------- start screen ---------- */
 function refreshReturning(){
   const list = children();
@@ -485,22 +539,26 @@ $('startBtn').onclick = () => {
 };
 
 /* ---------- discovery flow ---------- */
-$('readyBtn').onclick = () => { bi = 0; qi = 0; results.length = 0; startQuestion(); };
+function resetDiscovery(){ bi = 0; qi = 0; results.length = 0; for (const k in prefResults) delete prefResults[k]; }
+$('readyBtn').onclick = () => { resetDiscovery(); startQuestion(); };
 $('breakBtn').onclick = () => startQuestion();
 document.querySelectorAll('[data-home]').forEach(b => b.onclick = () => show('screen-start'));
 document.querySelectorAll('[data-hub]').forEach(b => b.onclick = () => goHub());
 
 function drawProgress(){
   const box = $('progBlocks'); box.innerHTML = '';
-  for (let b = 0; b < BLOCKS.length; b++){
+  for (let b = 0; b < TOTAL_BLOCKS; b++){
     const seg = document.createElement('div'); seg.className = 'seg';
     const fill = document.createElement('i');
-    fill.style.width = (b < bi ? 100 : b === bi ? (qi/BLOCKS[b].length)*100 : 0) + '%';
+    fill.style.width = (b < bi ? 100 : b === bi ? (qi/blockLen(b))*100 : 0) + '%';
     seg.appendChild(fill); box.appendChild(seg);
   }
-  $('progLbl').textContent = `Block ${bi+1} of ${BLOCKS.length}`;
+  $('progLbl').textContent = bi < BLOCKS.length
+    ? `Block ${bi+1} of ${TOTAL_BLOCKS}` : `About you · block ${TOTAL_BLOCKS} of ${TOTAL_BLOCKS}`;
 }
-function startQuestion(){
+function startQuestion(){ if (bi < BLOCKS.length) startQuizQuestion(); else startPrefQuestion(); }
+
+function startQuizQuestion(){
   const q = BLOCKS[bi][qi], meta = DOMAIN_META[q.domain];
   $('qtag').textContent = `${meta.label} · question ${qi+1} of 5`;
   $('qtext').textContent = q.q;
@@ -526,22 +584,57 @@ function answerDiscovery(idx, btn, box, q){
   const fb = $('fb'); fb.className = 'fb ' + (correct ? 'good' : 'bad');
   fb.textContent = (correct ? 'Nice! ' : 'Good try. ') + q.why;
   const segs = $('progBlocks').children;
-  if (segs[bi]) segs[bi].firstChild.style.width = ((qi+1)/BLOCKS[bi].length)*100 + '%';
+  if (segs[bi]) segs[bi].firstChild.style.width = ((qi+1)/blockLen(bi))*100 + '%';
   setTimeout(nextDiscovery, correct ? 1100 : 1900);
+}
+
+/* preference question — no right/wrong, just record the choice */
+function startPrefQuestion(){
+  const q = PREFS[qi];
+  $('qtag').textContent = `About you · question ${qi+1} of ${PREFS.length}`;
+  $('qtext').textContent = q.q;
+  $('fb').textContent = ''; $('fb').className = 'fb';
+  drawProgress();
+  const box = $('opts'); box.innerHTML = '';
+  q.options.forEach((opt, idx) => {
+    const b = document.createElement('button');
+    b.className = 'opt'; b.textContent = opt.label;
+    b.onclick = () => answerPref(idx, b, box, q);
+    box.appendChild(b);
+  });
+  locked = false;
+  show('screen-q');
+}
+function answerPref(idx, btn, box, q){
+  if (locked) return; locked = true;
+  [...box.children].forEach(c => c.disabled = true);
+  btn.classList.add('sel');
+  prefResults[q.dim] = q.options[idx];
+  const fb = $('fb'); fb.className = 'fb good'; fb.textContent = 'Got it 👍';
+  const segs = $('progBlocks').children;
+  if (segs[bi]) segs[bi].firstChild.style.width = ((qi+1)/blockLen(bi))*100 + '%';
+  setTimeout(nextDiscovery, 650);
 }
 function nextDiscovery(){
   qi++;
-  if (qi < BLOCKS[bi].length){ startQuestion(); return; }
+  if (qi < blockLen(bi)){ startQuestion(); return; }
   bi++; qi = 0;
-  if (bi < BLOCKS.length) showBreak(); else finishDiscovery();
+  if (bi < TOTAL_BLOCKS) showBreak(); else finishDiscovery();
 }
 function showBreak(){
+  if (bi === BLOCKS.length){                 // entering the preferences block
+    $('breakIcon').textContent = '💬';
+    $('breakTitle').textContent = `Great puzzling, ${childName}!`;
+    $('breakSub').textContent = 'Last part — a few quick questions about how YOU like to learn. There are no wrong answers here.';
+    $('breakBtn').textContent = 'About you →';
+    show('screen-break'); return;
+  }
   const done = bi, icons = ['🌱','🚀'];
   $('breakIcon').textContent = icons[done-1] || '✅';
   $('breakTitle').textContent = `Block ${done} done — nice work, ${childName}!`;
   $('breakSub').textContent = bi === 1
     ? 'The next games get a little trickier. Take a breath whenever you like.'
-    : 'Last block! These are the trickiest puzzles of all.';
+    : 'Last puzzle block — then a few questions about you.';
   $('breakBtn').textContent = `Start block ${bi+1}`;
   show('screen-break');
 }
@@ -565,25 +658,59 @@ function finishDiscovery(){
   let best='pattern', bestAcc=-1;
   for (const k of ['pattern','english','maths']){ const a = dom[k].t?dom[k].c/dom[k].t:0; if (a>bestAcc){bestAcc=a;best=k;} }
 
+  // block-4 preferences
+  const pAtt = prefResults.attention || {};
+  const attentionSpanMin = pAtt.span || null;
+  const attentionSpanValue = pAtt.value || null;
+
   const profile = {name:childName, when:new Date().toISOString(), score:{correct,total},
-    domains:dom, avgSeconds:+avgS.toFixed(1), strongest:best, pace, attention:attn};
+    domains:dom, avgSeconds:+avgS.toFixed(1), strongest:best,
+    pace, paceWhy, attention:attn, attnWhy,
+    attentionSpanMin, attentionSpanValue,
+    prefs:{
+      motivation:(prefResults.motivation||{}).value || null,
+      sensory:(prefResults.sensory||{}).value || null,
+      workStyle:(prefResults.switching||{}).value || null,
+      challenge:(prefResults.challenge||{}).value || null,
+    }};
   registerChild(childName);
   try { localStorage.setItem(childKey+'_profile', JSON.stringify(profile)); } catch(e){}
+  renderProfile(profile);
+}
 
-  // render
-  $('resTitle').textContent = `${childName}'s discovery profile`;
-  $('resLead').textContent = `${childName} answered ${correct} of ${total} across patterns, reading and number puzzles. Here's what the games suggest about how ${childName} likes to think.`;
-  $('savedAs').textContent = childName;
+/* ---------- render a profile (used after discovery AND from the hub) ---------- */
+function renderProfile(p){
+  const dom = p.domains || {pattern:{c:0,t:0},english:{c:0,t:0},maths:{c:0,t:0}};
+  const prefs = p.prefs || {};
+  const spanHead = p.attentionSpanMin ? `about ${p.attentionSpanMin} minutes` : (p.attentionSpanValue || 'not recorded');
+  $('resTitle').textContent = `${p.name}'s profile`;
+  $('resLead').textContent =
+    `Focus window: ${spanHead}. ${p.name} answered ${p.score.correct} of ${p.score.total} across ` +
+    `patterns, reading and number puzzles. Here's how ${p.name} likes to learn.`;
+  $('savedAs').textContent = p.name;
+
   const bars = $('domainBars'); bars.innerHTML = '';
   for (const k of ['pattern','english','maths']){
-    const d = dom[k], pct = d.t?Math.round(d.c/d.t*100):0;
+    const d = dom[k] || {c:0,t:0}, pct = d.t?Math.round(d.c/d.t*100):0;
     const row = document.createElement('div'); row.className = 'barrow';
     row.innerHTML = `<div class="top"><span>${DOMAIN_META[k].icon} ${DOMAIN_META[k].key}</span><span class="pct">${d.c}/${d.t}</span></div><div class="bar"><i style="width:${pct}%"></i></div>`;
     bars.appendChild(row);
   }
+
+  const rows = [];
+  const spanTxt = p.attentionSpanMin
+    ? `About ${p.attentionSpanMin} minutes of focus before a break (${p.name}'s own estimate). ${p.attnWhy||''}`
+    : (p.attentionSpanValue ? `${p.attentionSpanValue} (their own estimate).` : (p.attnWhy || '—'));
+  rows.push(['⏱️','Attention span', spanTxt]);
+  rows.push(['💡','Strongest thinking style', `Did best on ${DOMAIN_META[p.strongest].key.toLowerCase()} questions.`]);
+  rows.push(['⚡','Pace', p.paceWhy || '—']);
+  rows.push(['🎯','Focus as it got harder', p.attnWhy || '—']);
+  if (prefs.motivation) rows.push(['🌟','What motivates them', MOTIV_TXT[prefs.motivation] || prefs.motivation]);
+  if (prefs.sensory)    rows.push(['🎧','Focuses best', SENS_TXT[prefs.sensory] || prefs.sensory]);
+  if (prefs.workStyle)  rows.push(['🔀','Work style', WORK_TXT[prefs.workStyle] || prefs.workStyle]);
+
   const ins = $('insights'); ins.innerHTML = '';
-  [['💡','Strongest thinking style',`${childName} did best on ${DOMAIN_META[best].key.toLowerCase()} questions today.`],
-   ['⏱️','Pace',paceWhy],['🎯','Attention window',attnWhy]].forEach(([ic,k,v]) => {
+  rows.forEach(([ic,k,v]) => {
     const el = document.createElement('div'); el.className = 'stat';
     el.innerHTML = `<div class="ic">${ic}</div><div><p class="k">${k}</p><p class="v">${v}</p></div>`;
     ins.appendChild(el);
@@ -598,12 +725,18 @@ function goHub(){
   $('hubTitle').textContent = `What next, ${childName}?`;
   const n = loadMistakes().length;
   $('misCount').textContent = n ? `(${n})` : '';
+  $('profState').textContent = localStorage.getItem(childKey+'_profile') ? '' : '(none yet)';
   show('screen-hub');
 }
 $('switchChild').onclick = () => { $('name').value=''; refreshReturning(); show('screen-start'); };
-$('optDiscovery').onclick = () => { bi=0; qi=0; results.length=0;
+$('optProfile').onclick = () => {
+  const raw = localStorage.getItem(childKey+'_profile');
+  if (raw){ try { renderProfile(JSON.parse(raw)); return; } catch(e){} }
+  $('optDiscovery').click();                 // no profile yet -> run discovery
+};
+$('optDiscovery').onclick = () => { resetDiscovery();
   $('introTitle').textContent = `Let's see how ${childName}'s brain works best`;
-  $('introSub').textContent = `A few quick games. No grades, no pressure. About 5 minutes.`;
+  $('introSub').textContent = `A few quick games and a few questions about you. No grades, no pressure. About 5 minutes.`;
   show('screen-intro'); };
 $('optText').onclick = () => { $('textStatus').textContent=''; show('screen-text'); };
 $('optPhoto').onclick = () => { $('photoStatus').textContent=''; show('screen-photo'); };
