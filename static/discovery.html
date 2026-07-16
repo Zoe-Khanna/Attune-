@@ -26,8 +26,9 @@
   .card{background:#fff;border:1px solid var(--line);border-radius:20px;padding:26px;margin-top:22px;
     box-shadow:0 2px 14px rgba(34,32,27,.04);}
   label{display:block;font-weight:700;font-size:16px;margin:0 0 10px;}
-  input[type=text],textarea{width:100%;padding:15px 16px;border:1px solid var(--line);border-radius:12px;
+  input[type=text],input[type=number],textarea{width:100%;padding:15px 16px;border:1px solid var(--line);border-radius:12px;
     font-family:inherit;font-size:17px;background:#fff;color:var(--ink);}
+  input[type=number]:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-soft);}
   textarea{min-height:150px;resize:vertical;line-height:1.5;}
   input[type=text]:focus,textarea:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-soft);}
   .hint{color:var(--muted);font-size:15px;line-height:1.5;margin:14px 0 0;}
@@ -203,9 +204,21 @@
       <h2>Start</h2>
       <label for="name">Child's first name</label>
       <input id="name" type="text" placeholder="e.g. Aanya" autocomplete="off" maxlength="24">
+
+      <div class="scope-q">
+        <label for="age">How old are you?</label>
+        <input id="age" type="number" min="3" max="18" inputmode="numeric" placeholder="e.g. 9"
+               style="max-width:140px">
+      </div>
+      <div class="scope-q">
+        <label>What grade/year are you in?</label>
+        <div class="chips" id="gradeChipsStart"></div>
+      </div>
+
       <p class="hint">The discovery session mixes math, reading, and puzzle games so it sees how
-        your child focuses across different kinds of thinking.</p>
+        your child focuses across different kinds of thinking — pitched to their grade.</p>
       <button class="btn" id="startBtn" style="margin-top:20px">Begin discovery session</button>
+      <div class="status err" id="startMsg"></div>
       <div id="returning" class="hide" style="margin-top:18px"></div>
     </div>
 
@@ -526,8 +539,23 @@ function show(id){
   window.scrollTo(0,0);
 }
 
-/* ---------- per-child storage ---------- */
+/* ---------- per-child storage ----------
+   EVERY per-child value lives under this child's own key. `ckey()` is the single
+   gate: with no child selected it returns null and all reads/writes become no-ops,
+   so data can never land in a shared bucket or leak between profiles. */
 const keyOf = name => 'attune_' + name.trim().toLowerCase().replace(/[^a-z0-9]+/g,'_');
+function ckey(suffix){
+  if (!childKey || childKey === 'attune_' || childKey === 'attune_your_child') return null;
+  return childKey + suffix;
+}
+function getJSON(suffix, dflt){
+  const k = ckey(suffix); if (!k) return dflt;
+  try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : dflt; } catch(e){ return dflt; }
+}
+function setJSON(suffix, val){
+  const k = ckey(suffix); if (!k) return false;
+  try { localStorage.setItem(k, JSON.stringify(val)); return true; } catch(e){ return false; }
+}
 function registerChild(name){
   let list = [];
   try { list = JSON.parse(localStorage.getItem('attune_children')||'[]'); } catch(e){}
@@ -540,18 +568,21 @@ function registerChild(name){
 function children(){
   try { return JSON.parse(localStorage.getItem('attune_children')||'[]'); } catch(e){ return []; }
 }
+/* age + grade, captured before the very first discovery, kept per child */
+function loadMeta(){ return getJSON('_meta', {}) || {}; }
+function saveMeta(m){ setJSON('_meta', Object.assign(loadMeta(), m)); }
 /* ===== PERMANENT answer log — every answer ever, right or wrong. =====
    This is the record the stats page reads. Nothing in the app ever deletes it:
    the "clear" buttons only touch the review lists, never this. */
 function loadAnswers(){
-  try { return JSON.parse(localStorage.getItem(childKey+'_answers')||'[]'); } catch(e){ return []; }
+  return getJSON('_answers', []);
 }
 function logAnswer(ok, topic, game, question){
   try {
     const list = loadAnswers();
     list.push({t:Date.now(), ok:ok?1:0, topic:topic||'', game:game||'', q:question||''});
     if (list.length > 5000) list.splice(0, list.length - 5000);   // keep the newest 5000
-    localStorage.setItem(childKey+'_answers', JSON.stringify(list));
+    setJSON('_answers', list);
   } catch(e){}
 }
 /* First run after the update: rebuild the log from history already saved, so no
@@ -566,18 +597,18 @@ function ensureAnswerLog(){
   });
   loadMistakes().forEach(m => seeded.push({t:Date.parse(m.when)||Date.now(), ok:0, topic:m.topic||'', game:m.game||'', q:m.question||''}));
   seeded.sort((a,b) => a.t - b.t);
-  if (seeded.length){ try { localStorage.setItem(childKey+'_answers', JSON.stringify(seeded)); } catch(e){} }
+  if (seeded.length) setJSON('_answers', seeded);
   return seeded;
 }
 function loadMistakes(){
-  try { return JSON.parse(localStorage.getItem(childKey+'_mistakes')||'[]'); } catch(e){ return []; }
+  return getJSON('_mistakes', []);
 }
 function saveMistake(m){
   const list = loadMistakes(); list.unshift(m);
-  localStorage.setItem(childKey+'_mistakes', JSON.stringify(list));
+  setJSON('_mistakes', list);
 }
 function loadCorrect(){
-  try { return JSON.parse(localStorage.getItem(childKey+'_correct')||'[]'); } catch(e){ return []; }
+  return getJSON('_correct', []);
 }
 function saveCorrect(m){
   const list = loadCorrect();
@@ -585,10 +616,10 @@ function saveCorrect(m){
   if (i >= 0){ const [it] = list.splice(i,1); it.times = (it.times||1)+1; it.when = m.when; list.unshift(it); }
   else { m.times = 1; list.unshift(m); }
   if (list.length > 300) list.length = 300;
-  localStorage.setItem(childKey+'_correct', JSON.stringify(list));
+  setJSON('_correct', list);
 }
 /* saved games (replayable) + a per-child difficulty that climbs each new game */
-function loadGames(){ try { return JSON.parse(localStorage.getItem(childKey+'_games')||'[]'); } catch(e){ return []; } }
+function loadGames(){ return getJSON('_games', []); }
 function saveGame(quiz){
   try {
     const list = loadGames();
@@ -597,15 +628,15 @@ function saveGame(quiz){
     list.unshift({sig, topic:quiz.topic, questions:quiz.questions,
                   difficulty:quiz.difficulty||1, when:new Date().toISOString()});
     if (list.length > 30) list.length = 30;
-    localStorage.setItem(childKey+'_games', JSON.stringify(list));
+    setJSON('_games', list);
   } catch(e){                                                 // storage full? drop oldest and retry once
-    try { const l = loadGames().slice(0,10); localStorage.setItem(childKey+'_games', JSON.stringify(l)); } catch(_){}
+    try { setJSON('_games', loadGames().slice(0,10)); } catch(_){}
   }
 }
 function bumpDifficulty(){
   let d = 1;
-  try { d = Math.max(1, +(localStorage.getItem(childKey+'_difficulty')||1));
-        localStorage.setItem(childKey+'_difficulty', d+1); } catch(e){}
+  const k = ckey('_difficulty'); if (!k) return 1;
+  try { d = Math.max(1, +(localStorage.getItem(k)||1)); localStorage.setItem(k, d+1); } catch(e){}
   return d;
 }
 
@@ -614,8 +645,40 @@ let childName = '', childKey = '';
 let bi = 0, qi = 0, askedAt = 0, locked = false;
 const results = [];
 
-/* ---------- discovery question bank (3 blocks × 5, mixed + ramping) ---------- */
-const BLOCKS = [
+/* ---------- discovery question banks, one per grade band ----------
+   Each band: 3 blocks × 5 questions, mixing patterns / English / maths and
+   ramping in difficulty. The child's grade picks the band, so the discovery
+   measures HOW they think without being too easy or impossibly hard. */
+const GRADE_BANDS = ['K–2', '3–5', '6–8', '9–12'];
+const BANKS = {
+
+/* ================= K–2 (roughly ages 5–8) ================= */
+'K–2': [
+  [
+    {domain:'pattern', d:1, q:'What comes next?   🔴 🔵 🔴 🔵 🔴 ___', options:['🔵','🔴','🟢','⭐'], answer:0, why:'It goes red, blue, red, blue…'},
+    {domain:'english', d:2, q:'Which word starts with the letter B?', options:['cat','ball','sun','dog'], answer:1, why:'“Ball” begins with a B.'},
+    {domain:'maths', d:3, q:'2 + 1 = ?', options:['2','3','4','1'], answer:1, why:'2 and 1 more makes 3.'},
+    {domain:'pattern', d:4, q:'What comes next?   1, 2, 3, 4, ___', options:['6','5','7','3'], answer:1, why:'It counts up by one each time.'},
+    {domain:'english', d:5, q:'Which one is an animal?', options:['chair','apple','dog','hat'], answer:2, why:'A dog is an animal — the others are things.'},
+  ],
+  [
+    {domain:'maths', d:1, q:'5 − 2 = ?', options:['2','3','4','1'], answer:1, why:'Take 2 away from 5 to get 3.'},
+    {domain:'pattern', d:2, q:'Finish it:   🔺🔺🔵  🔺🔺🔵  🔺🔺___', options:['🔵','🔺','🟢','⭐'], answer:0, why:'Two triangles then a circle, again and again.'},
+    {domain:'english', d:3, q:'Which word rhymes with “sun”?', options:['run','cat','big','top'], answer:0, why:'“Run” ends with the same -un sound.'},
+    {domain:'maths', d:4, q:'3 + 3 = ?', options:['5','6','7','4'], answer:1, why:'Double 3 is 6.'},
+    {domain:'pattern', d:5, q:'What comes next?   2, 4, 6, ___', options:['7','8','9','5'], answer:1, why:'It counts up by 2 each time.'},
+  ],
+  [
+    {domain:'english', d:1, q:'What is the opposite of “hot”?', options:['warm','cold','big','fast'], answer:1, why:'“Cold” is the opposite of hot.'},
+    {domain:'maths', d:2, q:'10 − 4 = ?', options:['5','6','7','4'], answer:1, why:'10 take away 4 leaves 6.'},
+    {domain:'pattern', d:3, q:'Which one is different?   circle, circle, square, circle', options:['circle','square','all same','none'], answer:1, why:'The square is the odd one out.'},
+    {domain:'maths', d:4, q:'You have 4 sweets and get 3 more. How many now?', options:['6','7','8','5'], answer:1, why:'4 + 3 = 7.'},
+    {domain:'english', d:5, q:'Which sentence is written correctly?', options:['i like cats','I like cats.','i like cats.','I Like cats'], answer:1, why:'It starts with a capital I and ends with a full stop.'},
+  ],
+],
+
+/* ================= 3–5 (roughly ages 8–11) ================= */
+'3–5': [
   [
     {domain:'pattern', d:1, q:'What comes next?   ⭐ 🌙 ⭐ 🌙 ⭐ ___', options:['🌙','⭐','☀️','⭐🌙'], answer:0, why:'It goes star, moon, star, moon…'},
     {domain:'english', d:2, q:'Which word rhymes with “cat”?', options:['dog','hat','cup','car'], answer:1, why:'“Hat” ends with the same -at sound.'},
@@ -637,7 +700,62 @@ const BLOCKS = [
     {domain:'maths', d:4, q:'A pack has 6 pencils. How many pencils in 4 packs?', options:['20','24','18','28'], answer:1, why:'4 packs × 6 pencils = 24.'},
     {domain:'english', d:5, q:'Which sentence is punctuated correctly?', options:['wheres my book','Where’s my book?','Where’s my book','wheres my book?'], answer:1, why:'It needs the apostrophe in “Where’s” and a question mark.'},
   ],
-];
+],
+
+/* ================= 6–8 (roughly ages 11–14) ================= */
+'6–8': [
+  [
+    {domain:'pattern', d:1, q:'What comes next?   3, 6, 12, 24, ___', options:['30','36','48','40'], answer:2, why:'Each number doubles: 24 × 2 = 48.'},
+    {domain:'english', d:2, q:'Which word is a synonym for “enormous”?', options:['tiny','huge','quick','quiet'], answer:1, why:'“Huge” means the same as enormous.'},
+    {domain:'maths', d:3, q:'What is 15% of 200?', options:['20','30','25','35'], answer:1, why:'10% is 20, 5% is 10 — together 30.'},
+    {domain:'pattern', d:4, q:'What comes next?   1, 4, 9, 16, ___', options:['20','24','25','21'], answer:2, why:'They are square numbers: 5 × 5 = 25.'},
+    {domain:'english', d:5, q:'Which is correct?', options:['Its raining','It’s raining','Its’ raining','Its raining’'], answer:1, why:'“It’s” is short for “it is”.'},
+  ],
+  [
+    {domain:'maths', d:1, q:'What is −5 + 8?', options:['3','−3','13','−13'], answer:0, why:'Moving 8 up from −5 lands on 3.'},
+    {domain:'pattern', d:2, q:'What comes next?   2, 3, 5, 8, 13, ___', options:['18','21','20','16'], answer:1, why:'Add the two before it: 8 + 13 = 21.'},
+    {domain:'english', d:3, q:'What is the past tense of “bring”?', options:['bringed','brought','brang','broughted'], answer:1, why:'“Bring” becomes “brought”.'},
+    {domain:'maths', d:4, q:'Solve:   3x = 21.   What is x?', options:['6','7','8','9'], answer:1, why:'21 ÷ 3 = 7.'},
+    {domain:'pattern', d:5, q:'Odd one out:   2, 3, 5, 9, 11', options:['2','3','9','11'], answer:2, why:'9 is not prime — it is 3 × 3.'},
+  ],
+  [
+    {domain:'english', d:1, q:'Which sentence is a metaphor?', options:['He is as fast as a cheetah','He is a cheetah on the track','He runs very fast','He ran quickly away'], answer:1, why:'A metaphor says one thing IS another — no “like” or “as”.'},
+    {domain:'maths', d:2, q:'What is the area of a rectangle 7 cm by 6 cm?', options:['42 cm²','13 cm²','26 cm²','36 cm²'], answer:0, why:'Area = length × width = 7 × 6 = 42.'},
+    {domain:'pattern', d:3, q:'What comes next?   100, 50, 25, 12.5, ___', options:['6','6.25','5','10'], answer:1, why:'Each number is halved: 12.5 ÷ 2 = 6.25.'},
+    {domain:'maths', d:4, q:'A shirt costs £40 with 25% off. What is the new price?', options:['£30','£35','£25','£32'], answer:0, why:'25% of 40 is 10, so 40 − 10 = £30.'},
+    {domain:'english', d:5, q:'Which sentence is in the passive voice?', options:['The cat chased the mouse','The mouse was chased by the cat','The cat is chasing','The mouse ran away'], answer:1, why:'The subject receives the action, so it is passive.'},
+  ],
+],
+
+/* ================= 9–12 (roughly ages 14–18) ================= */
+'9–12': [
+  [
+    {domain:'pattern', d:1, q:'What comes next?   1, 8, 27, 64, ___', options:['100','125','81','96'], answer:1, why:'They are cubes: 5³ = 125.'},
+    {domain:'english', d:2, q:'What does “ubiquitous” mean?', options:['rare','found everywhere','ancient','very loud'], answer:1, why:'Ubiquitous means present everywhere.'},
+    {domain:'maths', d:3, q:'Solve:   2x + 5 = 17.   What is x?', options:['5','6','7','8'], answer:1, why:'17 − 5 = 12, and 12 ÷ 2 = 6.'},
+    {domain:'pattern', d:4, q:'What comes next?   2, 6, 12, 20, 30, ___', options:['40','42','36','44'], answer:1, why:'The gaps grow 4, 6, 8, 10, 12 — so 30 + 12 = 42.'},
+    {domain:'english', d:5, q:'Which device is used in “The wind whispered”?', options:['Simile','Personification','Hyperbole','Alliteration'], answer:1, why:'The wind is given a human action, so it is personification.'},
+  ],
+  [
+    {domain:'maths', d:1, q:'What is 2³ × 2²?', options:['32','16','64','8'], answer:0, why:'Add the powers: 2⁵ = 32.'},
+    {domain:'pattern', d:2, q:'What comes next?   1, 1, 2, 6, 24, ___', options:['48','120','96','60'], answer:1, why:'Each is multiplied by the next number: 24 × 5 = 120.'},
+    {domain:'english', d:3, q:'What does “juxtaposition” describe?', options:['repeating sounds','placing two things side by side to contrast them','a deliberate exaggeration','a rhetorical question'], answer:1, why:'Juxtaposition places contrasting things together.'},
+    {domain:'maths', d:4, q:'If f(x) = 3x² − 2, what is f(3)?', options:['25','23','27','7'], answer:0, why:'3 × 9 = 27, minus 2 = 25.'},
+    {domain:'pattern', d:5, q:'Odd one out:   4, 9, 16, 20, 25', options:['9','16','20','25'], answer:2, why:'20 is not a square number.'},
+  ],
+  [
+    {domain:'english', d:1, q:'What is the tone of a text that mocks its subject?', options:['Satirical','Solemn','Nostalgic','Objective'], answer:0, why:'Mockery to criticise is satire.'},
+    {domain:'maths', d:2, q:'What is the gradient of the line   y = 4x − 7?', options:['−7','4','7','−4'], answer:1, why:'In y = mx + c the gradient m is 4.'},
+    {domain:'pattern', d:3, q:'What comes next?   3, 7, 15, 31, ___', options:['47','63','55','62'], answer:1, why:'Each is doubled then plus 1: 31 × 2 + 1 = 63.'},
+    {domain:'maths', d:4, q:'Two fair coins are flipped. What is the chance of two heads?', options:['1/2','1/4','1/3','3/4'], answer:1, why:'½ × ½ = ¼.'},
+    {domain:'english', d:5, q:'Which sentence has a dangling modifier?', options:['Walking home, the rain soaked me','Walking home, I got soaked','I walked home in the rain','The rain soaked me as I walked'], answer:0, why:'It reads as though the rain was walking home.'},
+  ],
+],
+};
+/* Which bank this child gets — set from their saved grade. */
+let BLOCKS = BANKS['3–5'];
+function bandForGrade(g){ return GRADE_BANDS.includes(g) ? g : '3–5'; }
+function useBankForChild(){ BLOCKS = BANKS[bandForGrade(loadMeta().grade)]; }
 const DOMAIN_META = {
   pattern:{label:'Pattern game', key:'Patterns', icon:'🧩'},
   english:{label:'Word game', key:'English', icon:'📖'},
@@ -703,23 +821,35 @@ function refreshReturning(){
   list.forEach(c => {
     const b = document.createElement('button');
     b.className = 'opt'; b.textContent = c.name;
-    b.onclick = () => { childName = c.name; childKey = c.key; goHub(); };
+    b.onclick = () => { childName = c.name; childKey = c.key; useBankForChild(); goHub(); };
     row.appendChild(b);
   });
   box.appendChild(row);
 }
 $('name').addEventListener('keydown', e => { if (e.key === 'Enter') $('startBtn').click(); });
+let startGrade = null;
+function buildStartGradeChips(){
+  buildChips($('gradeChipsStart'), GRADE_BANDS.map(g => ({label:'Grade '+g, value:g})),
+             () => startGrade, v => { startGrade = v; $('startMsg').textContent = ''; });
+}
 $('startBtn').onclick = () => {
   const n = $('name').value.trim();
-  if (!n){ $('name').focus(); $('name').style.borderColor = 'var(--bad)';
-    $('name').placeholder = 'Please type the child\'s name first'; return; }
-  $('name').style.borderColor = '';
+  const age = parseInt($('age').value, 10);
+  const msg = t => { $('startMsg').textContent = t; };
+  if (!n){ $('name').focus(); msg('Please type the child\'s name.'); return; }
+  if (!age || age < 3 || age > 18){ $('age').focus(); msg('Please enter an age between 3 and 18.'); return; }
+  if (!startGrade){ msg('Please pick a grade — it sets how hard the questions are.'); return; }
+  msg('');
   // Always the same key for the same name, so a child's data is never orphaned.
   childName = n.charAt(0).toUpperCase() + n.slice(1);
   childKey = keyOf(childName);
+  registerChild(childName);                 // the profile exists from the very first step
+  saveMeta({age, grade:startGrade});
+  useBankForChild();                        // questions pitched to their grade
   $('introTitle').textContent = `Let's see how ${childName}'s brain works best`;
   $('introSub').textContent =
-    `A few quick games. No grades, no pressure. About 5 minutes. ${childName} just plays — Attune watches how they focus.`;
+    `A few quick games pitched for Grade ${startGrade}. No grades, no pressure. About 5 minutes — ` +
+    `${childName} just plays while Attune watches how they focus.`;
   show('screen-intro');
 };
 
@@ -849,7 +979,9 @@ function finishDiscovery(){
   const attentionSpanMin = pAtt.span || null;
   const attentionSpanValue = pAtt.value || null;
 
+  const meta = loadMeta();
   const profile = {name:childName, when:new Date().toISOString(), score:{correct,total},
+    age:meta.age || null, grade:meta.grade || null,
     domains:dom, avgSeconds:+avgS.toFixed(1), strongest:best,
     pace, paceWhy, attention:attn, attnWhy,
     attentionSpanMin, attentionSpanValue,
@@ -862,13 +994,13 @@ function finishDiscovery(){
   registerChild(childName);
   try {
     // A new session must NEVER lose the old profile — archive it first.
-    const prev = localStorage.getItem(childKey+'_profile');
+    const prev = getJSON('_profile', null);
     if (prev){
-      let hist = []; try { hist = JSON.parse(localStorage.getItem(childKey+'_profiles')||'[]'); } catch(e){}
-      hist.unshift(JSON.parse(prev)); if (hist.length > 20) hist.length = 20;
-      localStorage.setItem(childKey+'_profiles', JSON.stringify(hist));
+      const hist = getJSON('_profiles', []);
+      hist.unshift(prev); if (hist.length > 20) hist.length = 20;
+      setJSON('_profiles', hist);
     }
-    localStorage.setItem(childKey+'_profile', JSON.stringify(profile));
+    setJSON('_profile', profile);
   } catch(e){}
   renderProfile(profile);
 }
@@ -878,8 +1010,10 @@ function renderProfile(p){
   const dom = p.domains || {pattern:{c:0,t:0},english:{c:0,t:0},maths:{c:0,t:0}};
   const prefs = p.prefs || {};
   const spanHead = p.attentionSpanMin ? `about ${p.attentionSpanMin} minutes` : (p.attentionSpanValue || 'not recorded');
+  const who = [p.age ? `age ${p.age}` : null, p.grade ? `Grade ${p.grade}` : null].filter(Boolean).join(' · ');
   $('resTitle').textContent = `${p.name}'s profile`;
   $('resLead').textContent =
+    (who ? who + '. ' : '') +
     `Focus window: ${spanHead}. ${p.name} answered ${p.score.correct} of ${p.score.total} across ` +
     `patterns, reading and number puzzles. Here's how ${p.name} likes to learn.`;
   $('savedAs').textContent = p.name;
@@ -926,18 +1060,22 @@ function goHub(){
   $('statCount').textContent = sc ? `(${sc} answers)` : '';
   const gc = loadGames().length;
   $('gamesCount').textContent = gc ? `(${gc})` : '';
-  $('profState').textContent = localStorage.getItem(childKey+'_profile') ? '' : '(none yet)';
+  $('profState').textContent = getJSON('_profile', null) ? '' : '(none yet)';
   show('screen-hub');
 }
 $('optCorrect').onclick = () => renderCorrect();
 $('optStats').onclick = () => renderStats();
-$('switchChild').onclick = () => { $('name').value=''; refreshReturning(); show('screen-start'); };
+$('switchChild').onclick = () => {
+  // Fully leave the current child — no stale key can carry data across profiles.
+  childName = ''; childKey = ''; resetScope();
+  $('name').value=''; refreshReturning(); show('screen-start');
+};
 $('optProfile').onclick = () => {
-  const raw = localStorage.getItem(childKey+'_profile');
-  if (raw){ try { renderProfile(JSON.parse(raw)); return; } catch(e){} }
+  const saved = getJSON('_profile', null);
+  if (saved){ renderProfile(saved); return; }
   $('optDiscovery').click();                 // no profile yet -> run discovery
 };
-$('optDiscovery').onclick = () => { resetDiscovery();
+$('optDiscovery').onclick = () => { resetDiscovery(); useBankForChild();
   $('introTitle').textContent = `Let's see how ${childName}'s brain works best`;
   $('introSub').textContent = `A few quick games and a few questions about you. No grades, no pressure. About 5 minutes.`;
   show('screen-intro'); };
@@ -959,7 +1097,7 @@ const DEMO_QUIZ = {topic:'Demo · Our Solar System', questions:[
 
 /* ---------- text → game ---------- */
 /* ---------- "just a topic?" → ask grade + how far to go ---------- */
-const GRADES = ['Grade K–2','Grade 3–4','Grade 5–6','Grade 7–8','Grade 9–10','Grade 11–12'];
+const GRADES = GRADE_BANDS.map(g => 'Grade ' + g);
 const DEPTHS = [
   {label:'Just the basics', value:'basics'},
   {label:'Standard',        value:'standard'},
@@ -986,7 +1124,13 @@ function showScopePanel(){
   buildChips($('depthChips'), DEPTHS, () => scopeDepth, v => scopeDepth = v);
   $('topicScope').classList.remove('hide');
 }
-function resetScope(){ scopeGrade = null; scopeDepth = null; $('topicScope').classList.add('hide'); }
+function resetScope(){
+  // Reuse the grade we already know for this child — they shouldn't be asked twice.
+  const g = loadMeta().grade;
+  scopeGrade = g ? 'Grade ' + g : null;
+  scopeDepth = null;
+  $('topicScope').classList.add('hide');
+}
 // If they paste real material, the scope questions don't apply — hide them again.
 $('matText').addEventListener('input', () => {
   if (!looksLikeTopic($('matText').value.trim())) $('topicScope').classList.add('hide');
@@ -1301,9 +1445,10 @@ function checker(base, dark, size){
 function roundRectPath(x,y,w,h,r){ ctx.beginPath();
   ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
   ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
-function bestKey(){ return childKey+'_best_'+activeGameId; }
-function loadBest(){ return +(localStorage.getItem(bestKey())||0); }
-function saveBest(){ if (!g) return; const k = bestKey(); if (Math.floor(g.dist) > +(localStorage.getItem(k)||0)) localStorage.setItem(k, Math.floor(g.dist)); }
+function bestKey(){ return ckey('_best_'+activeGameId); }
+function loadBest(){ const k = bestKey(); return k ? +(localStorage.getItem(k)||0) : 0; }
+function saveBest(){ if (!g) return; const k = bestKey(); if (!k) return;
+  if (Math.floor(g.dist) > +(localStorage.getItem(k)||0)) localStorage.setItem(k, Math.floor(g.dist)); }
 
 /* =====================================================================
    SPACE WAVES — hold to fly up, release to fall. Question every 200 m.
@@ -1785,6 +1930,7 @@ function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','
 
 /* ---------- boot ---------- */
 refreshReturning();
+buildStartGradeChips();
 </script>
 </body>
 </html>
