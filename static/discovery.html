@@ -121,6 +121,29 @@
   .thumb.doc .dn{font-size:11px;color:var(--teal-dk);font-weight:600;text-align:center;
     line-height:1.2;word-break:break-word;max-height:2.4em;overflow:hidden;}
 
+  /* ---- charts (stats) ----
+     Right/wrong MEAN good/bad, so they wear the app's status tokens and always
+     ship with an icon + label — colour never carries the meaning alone. */
+  .viz{ --ok:#2E7D5B; --no:#C4553B; --trend:#1E7A6E; }
+  .legend{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-top:14px;}
+  .legend span{display:flex;align-items:center;gap:7px;font-size:14px;font-weight:600;color:var(--ink);}
+  .legend i{width:12px;height:12px;border-radius:3px;display:block;}
+  .pie-row{display:flex;align-items:center;justify-content:center;gap:22px;flex-wrap:wrap;}
+  .hero{font-family:'Fraunces',serif;font-weight:600;}
+  /* horizontal stacked bars: 4px rounded data-ends, 2px surface gap between segments */
+  .brow{margin:14px 0;}
+  .brow .blab{display:flex;justify-content:space-between;gap:10px;font-size:14px;font-weight:600;margin-bottom:6px;}
+  .brow .blab .bn{color:var(--muted);font-weight:600;white-space:nowrap;}
+  .btrack{display:flex;height:18px;gap:2px;}
+  .btrack i{display:block;height:100%;}
+  .btrack i.s1{background:var(--ok);border-radius:4px 0 0 4px;}
+  .btrack i.s2{background:var(--no);border-radius:0 4px 4px 0;}
+  .btrack i.only{border-radius:4px;}
+  .vtable{width:100%;border-collapse:collapse;font-size:14px;}
+  .vtable th,.vtable td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);}
+  .vtable th{font-weight:700;color:var(--muted);font-size:12px;letter-spacing:.06em;text-transform:uppercase;}
+  .vtable td.num{text-align:right;font-variant-numeric:tabular-nums;}
+
   /* ---- mistake review ---- */
   .mis{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:14px;}
   .mis .meta{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:0 0 8px;}
@@ -280,6 +303,11 @@
       <span><span class="k">Photograph or upload → game</span>
         <span class="d">Photos, PDFs or Word docs. The AI reads them and builds new questions on the same concepts.</span></span>
     </button>
+    <button class="opt-card" id="optStats">
+      <span class="ic">📊</span>
+      <span><span class="k">Stats <span id="statCount" class="muted"></span></span>
+        <span class="d">Right vs wrong, strongest topics, and whether you're improving over time.</span></span>
+    </button>
     <button class="opt-card" id="optCorrect">
       <span class="ic">✅</span>
       <span><span class="k">Answers I got right <span id="corCount" class="muted"></span></span>
@@ -424,6 +452,40 @@
     <button class="btn ghost" id="clearCor" style="margin-top:20px">Clear this list</button>
   </section>
 
+  <!-- =============== SCREEN 12 · STATS =============== -->
+  <section id="screen-stats" class="hide">
+    <div class="topbar">
+      <span class="chip">Stats</span>
+      <button class="homelink" data-hub>← options</button>
+    </div>
+    <h1 style="font-size:28px;margin-top:14px" id="statTitle">Stats</h1>
+    <p class="lead" id="statLead"></p>
+
+    <div class="card">
+      <h2 style="font-size:20px">Right vs wrong</h2>
+      <div id="pieWrap"></div>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:20px">By topic</h2>
+      <div id="barWrap"></div>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:20px">Are you improving?</h2>
+      <div id="trendWrap"></div>
+      <div class="stat" id="trendVerdict" style="border-top:1px solid var(--line);margin-top:6px"></div>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:20px">The numbers</h2>
+      <div id="statTable"></div>
+    </div>
+
+    <p class="foot">🔒 This record is permanent — every answer is kept and is never
+      deleted, even if the review lists are cleared.</p>
+  </section>
+
 </div>
 
 <script>
@@ -432,7 +494,8 @@
    ===================================================================== */
 const $ = id => document.getElementById(id);
 const SCREENS = ['screen-start','screen-intro','screen-break','screen-q','screen-result',
-                 'screen-hub','screen-text','screen-photo','screen-choose','screen-game','screen-review','screen-correct','screen-games'];
+                 'screen-hub','screen-text','screen-photo','screen-choose','screen-game','screen-review',
+                 'screen-correct','screen-games','screen-stats'];
 function show(id){
   SCREENS.forEach(s => $(s).classList.toggle('hide', s !== id));
   if (id !== 'screen-game') stopGame();
@@ -452,6 +515,35 @@ function registerChild(name){
 }
 function children(){
   try { return JSON.parse(localStorage.getItem('attune_children')||'[]'); } catch(e){ return []; }
+}
+/* ===== PERMANENT answer log — every answer ever, right or wrong. =====
+   This is the record the stats page reads. Nothing in the app ever deletes it:
+   the "clear" buttons only touch the review lists, never this. */
+function loadAnswers(){
+  try { return JSON.parse(localStorage.getItem(childKey+'_answers')||'[]'); } catch(e){ return []; }
+}
+function logAnswer(ok, topic, game, question){
+  try {
+    const list = loadAnswers();
+    list.push({t:Date.now(), ok:ok?1:0, topic:topic||'', game:game||'', q:question||''});
+    if (list.length > 5000) list.splice(0, list.length - 5000);   // keep the newest 5000
+    localStorage.setItem(childKey+'_answers', JSON.stringify(list));
+  } catch(e){}
+}
+/* First run after the update: rebuild the log from history already saved, so no
+   past progress is lost. */
+function ensureAnswerLog(){
+  const existing = loadAnswers();
+  if (existing.length) return existing;
+  const seeded = [];
+  loadCorrect().forEach(c => {
+    const t = Date.parse(c.when) || Date.now();
+    for (let i = 0; i < (c.times||1); i++) seeded.push({t, ok:1, topic:c.topic||'', game:c.game||'', q:c.question||''});
+  });
+  loadMistakes().forEach(m => seeded.push({t:Date.parse(m.when)||Date.now(), ok:0, topic:m.topic||'', game:m.game||'', q:m.question||''}));
+  seeded.sort((a,b) => a.t - b.t);
+  if (seeded.length){ try { localStorage.setItem(childKey+'_answers', JSON.stringify(seeded)); } catch(e){} }
+  return seeded;
 }
 function loadMistakes(){
   try { return JSON.parse(localStorage.getItem(childKey+'_mistakes')||'[]'); } catch(e){ return []; }
@@ -650,6 +742,7 @@ function answerDiscovery(idx, btn, box, q){
   btn.classList.add(correct ? 'right' : 'wrong');
   if (!correct) box.children[q.answer].classList.add('right');
   results.push({domain:q.domain, d:q.d, correct, ms, block:bi});
+  logAnswer(correct, 'Discovery · ' + DOMAIN_META[q.domain].key, 'Discovery', q.q);
   const fb = $('fb'); fb.className = 'fb ' + (correct ? 'good' : 'bad');
   fb.textContent = (correct ? 'Nice! ' : 'Good try. ') + q.why;
   const segs = $('progBlocks').children;
@@ -805,12 +898,15 @@ function goHub(){
   $('misCount').textContent = n ? `(${n})` : '';
   const cc = loadCorrect().length;
   $('corCount').textContent = cc ? `(${cc})` : '';
+  const sc = ensureAnswerLog().length;
+  $('statCount').textContent = sc ? `(${sc} answers)` : '';
   const gc = loadGames().length;
   $('gamesCount').textContent = gc ? `(${gc})` : '';
   $('profState').textContent = localStorage.getItem(childKey+'_profile') ? '' : '(none yet)';
   show('screen-hub');
 }
 $('optCorrect').onclick = () => renderCorrect();
+$('optStats').onclick = () => renderStats();
 $('switchChild').onclick = () => { $('name').value=''; refreshReturning(); show('screen-start'); };
 $('optProfile').onclick = () => {
   const raw = localStorage.getItem(childKey+'_profile');
@@ -1031,6 +1127,7 @@ function gameAnswer(idx, btn, box, q){
   const fb = $('gqFb'); fb.className = 'fb ' + (correct ? 'good':'bad');
   fb.textContent = (correct ? 'Correct — keep going! ' : 'Wrong — the run ends here. ') + (q.explain||'');
 
+  logAnswer(correct, GAME.topic || activeName, activeName, q.prompt);   // permanent stats record
   if (correct){
     // remember this win — for the praise, and for the lasting "got right" history
     const rec = {topic: GAME.topic || activeName, game: activeName,
@@ -1459,6 +1556,162 @@ function renderGames(){
   show('screen-games');
 }
 $('optGames').onclick = () => renderGames();
+/* =====================================================================
+   STATS — donut (right vs wrong), bars by topic, and a trend line.
+   Reads the permanent answer log, which is never deleted.
+   ===================================================================== */
+const OK_C = '#2E7D5B', NO_C = '#C4553B', TREND_C = '#1E7A6E';
+
+function topicTally(log){
+  const m = new Map();
+  log.forEach(a => { const k = a.topic || 'Other'; const e = m.get(k) || {r:0,w:0};
+    a.ok ? e.r++ : e.w++; m.set(k, e); });
+  return [...m.entries()].map(([k,v]) => ({k, r:v.r, w:v.w, t:v.r+v.w})).sort((a,b) => b.t - a.t);
+}
+
+function renderStats(){
+  const log = ensureAnswerLog();
+  const total = log.length, right = log.filter(a => a.ok).length, wrong = total - right;
+  const acc = total ? Math.round(right/total*100) : 0;
+  $('statTitle').textContent = `${childName}'s stats`;
+  if (!total){
+    $('statLead').textContent = 'No answers recorded yet. Play a game or run a discovery session — every answer lands here and stays forever.';
+    $('pieWrap').innerHTML = '<div class="empty">📊 Nothing to chart yet.</div>';
+    ['barWrap','trendWrap','statTable'].forEach(id => $(id).innerHTML = '');
+    $('trendVerdict').innerHTML = '';
+    show('screen-stats'); return;
+  }
+  $('statLead').textContent =
+    `${total} answer${total>1?'s':''} recorded — ${right} right and ${wrong} wrong (${acc}% correct).`;
+  drawPie(right, wrong, acc);
+  drawTopicBars(log);
+  drawTrend(log);
+  drawStatTable(log, right, wrong, acc);
+  show('screen-stats');
+}
+
+/* Donut: a 2-slice pie is weak on its own, so the accuracy % is the hero in the
+   middle (pie + meter in one). Status colours + icon + label. */
+function drawPie(right, wrong, acc){
+  const total = right + wrong, R = 66, S = 22, C = 2*Math.PI*R;
+  const fR = right/total, gap = (right && wrong) ? 4 : 0;   // 2px+ surface gap between segments
+  const lenR = Math.max(0, fR*C - gap), lenW = Math.max(0, (1-fR)*C - gap);
+  $('pieWrap').innerHTML = `
+  <div class="viz">
+    <div class="pie-row">
+      <svg viewBox="0 0 172 172" width="172" height="172" role="img"
+           aria-label="${acc}% correct — ${right} right, ${wrong} wrong">
+        <g transform="translate(86,86) rotate(-90)">
+          <circle r="${R}" fill="none" stroke="var(--line)" stroke-width="${S}"/>
+          ${right ? `<circle r="${R}" fill="none" stroke="${OK_C}" stroke-width="${S}"
+             stroke-dasharray="${lenR} ${C}" stroke-dashoffset="0"><title>Right: ${right}</title></circle>` : ''}
+          ${wrong ? `<circle r="${R}" fill="none" stroke="${NO_C}" stroke-width="${S}"
+             stroke-dasharray="${lenW} ${C}" stroke-dashoffset="${-(fR*C)}"><title>Wrong: ${wrong}</title></circle>` : ''}
+        </g>
+        <text x="86" y="84" text-anchor="middle" class="hero" font-size="36" fill="var(--ink)">${acc}%</text>
+        <text x="86" y="104" text-anchor="middle" font-size="11" font-weight="700"
+              letter-spacing="1.4" fill="var(--muted)">CORRECT</text>
+      </svg>
+    </div>
+    <div class="legend">
+      <span><i style="background:${OK_C}"></i>✅ Right — ${right}</span>
+      <span><i style="background:${NO_C}"></i>❌ Wrong — ${wrong}</span>
+    </div>
+  </div>`;
+}
+
+/* Horizontal stacked bars — topic names are long, so they go on their own line. */
+function drawTopicBars(log){
+  let rows = topicTally(log);
+  if (rows.length > 6){                                   // fold the tail into "Other"
+    const rest = rows.slice(6), o = {k:'Other', r:0, w:0, t:0};
+    rest.forEach(x => { o.r += x.r; o.w += x.w; o.t += x.t; });
+    rows = rows.slice(0,6).concat(o);
+  }
+  const max = Math.max(...rows.map(r => r.t));
+  $('barWrap').innerHTML = '<div class="viz">' + rows.map(r => {
+    const pct = Math.round(r.r/r.t*100), wTot = (r.t/max)*100;
+    const wR = (r.r/r.t)*wTot, wW = (r.w/r.t)*wTot;
+    const solo = (r.r === 0 || r.w === 0) ? ' only' : '';
+    return `<div class="brow">
+      <div class="blab"><span>${escapeHtml(r.k)}</span><span class="bn">${r.r}/${r.t} · ${pct}%</span></div>
+      <div class="btrack">
+        ${r.r ? `<i class="s1${solo}" style="width:${wR}%" title="${escapeHtml(r.k)} — right: ${r.r}"></i>` : ''}
+        ${r.w ? `<i class="s2${solo}" style="width:${wW}%" title="${escapeHtml(r.k)} — wrong: ${r.w}"></i>` : ''}
+      </div></div>`;
+  }).join('') + `<div class="legend">
+      <span><i style="background:${OK_C}"></i>✅ Right</span>
+      <span><i style="background:${NO_C}"></i>❌ Wrong</span></div></div>`;
+}
+
+/* Trend: accuracy per block of 5 answers, oldest → newest. One series, so the
+   heading names it and no legend box is needed. */
+function drawTrend(log){
+  const sorted = [...log].sort((a,b) => a.t - b.t), SZ = 5;
+  let buckets = [];
+  for (let i = 0; i < sorted.length; i += SZ){
+    const chunk = sorted.slice(i, i+SZ);
+    if (chunk.length < 2 && buckets.length) break;        // ignore a lone trailing answer
+    buckets.push({acc: Math.round(chunk.filter(a=>a.ok).length/chunk.length*100),
+                  n: chunk.length, t: chunk[chunk.length-1].t});
+  }
+  if (buckets.length > 12) buckets = buckets.slice(-12);
+  if (buckets.length < 2){
+    $('trendWrap').innerHTML = '<p class="muted" style="font-size:15px;margin:0">' +
+      'Answer a few more questions and your progress line will appear here.</p>';
+    $('trendVerdict').innerHTML = ''; return;
+  }
+  const W = 560, H = 210, P = {l:40, r:16, t:16, b:30};
+  const iw = W-P.l-P.r, ih = H-P.t-P.b;
+  const x = i => P.l + i*(iw/(buckets.length-1));
+  const y = v => P.t + ih - (v/100)*ih;
+  const grid = [0,50,100].map(v =>
+    `<line x1="${P.l}" y1="${y(v)}" x2="${W-P.r}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/>` +
+    `<text x="${P.l-8}" y="${y(v)+4}" text-anchor="end" font-size="11" fill="var(--muted)">${v}%</text>`).join('');
+  const pts = buckets.map((b,i) => `${x(i)},${y(b.acc)}`).join(' ');
+  const dots = buckets.map((b,i) =>
+    `<circle cx="${x(i)}" cy="${y(b.acc)}" r="5" fill="${TREND_C}" stroke="#fff" stroke-width="2">` +
+    `<title>${b.acc}% right over ${b.n} answers · ${new Date(b.t).toLocaleDateString()}</title></circle>`).join('');
+  const last = buckets[buckets.length-1];
+  $('trendWrap').innerHTML = `<div class="viz"><svg viewBox="0 0 ${W} ${H}" width="100%"
+      role="img" aria-label="Accuracy per 5 answers over time, oldest to newest">
+    ${grid}
+    <polyline points="${pts}" fill="none" stroke="${TREND_C}" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round"/>
+    ${dots}
+    <text x="${x(buckets.length-1)}" y="${Math.max(14, y(last.acc)-12)}" text-anchor="end"
+          font-size="13" font-weight="700" fill="var(--ink)">${last.acc}%</text>
+    <text x="${P.l}" y="${H-6}" font-size="11" fill="var(--muted)">earlier</text>
+    <text x="${W-P.r}" y="${H-6}" text-anchor="end" font-size="11" fill="var(--muted)">now</text>
+  </svg></div>`;
+
+  const half = Math.ceil(buckets.length/2);
+  const avg = a => Math.round(a.reduce((s,b) => s+b.acc, 0)/a.length);
+  const early = avg(buckets.slice(0, half)), recent = avg(buckets.slice(-half));
+  const d = recent - early;
+  let ic, k, v;
+  if (d >= 8){ ic='📈'; k='You\'re improving!';
+    v=`Recent accuracy is ${recent}% — up ${d} points from ${early}% earlier. Keep it up, ${childName}!`; }
+  else if (d <= -8){ ic='📉'; k='Dipping a little';
+    v=`Recent accuracy is ${recent}% vs ${early}% earlier. Reviewing your mistakes is usually all it takes to pull it back up.`; }
+  else { ic='➡️'; k='Holding steady';
+    v=`Recent accuracy is ${recent}% vs ${early}% earlier — steady. Try a harder game to push it higher.`; }
+  $('trendVerdict').innerHTML = `<div class="ic">${ic}</div><div><p class="k">${k}</p><p class="v">${v}</p></div>`;
+}
+
+/* The table view — the same numbers, readable without seeing colour at all. */
+function drawStatTable(log, right, wrong, acc){
+  const rows = topicTally(log);
+  $('statTable').innerHTML =
+    `<div style="overflow-x:auto"><table class="vtable">
+      <thead><tr><th>Topic</th><th class="num">Right</th><th class="num">Wrong</th><th class="num">Accuracy</th></tr></thead>
+      <tbody>${rows.map(r => `<tr><td>${escapeHtml(r.k)}</td><td class="num">${r.r}</td>` +
+        `<td class="num">${r.w}</td><td class="num">${Math.round(r.r/r.t*100)}%</td></tr>`).join('')}
+        <tr><td><b>All topics</b></td><td class="num"><b>${right}</b></td>
+        <td class="num"><b>${wrong}</b></td><td class="num"><b>${acc}%</b></td></tr>
+      </tbody></table></div>`;
+}
+
 function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
 /* ---------- boot ---------- */
