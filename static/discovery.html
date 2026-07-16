@@ -646,9 +646,11 @@ let bi = 0, qi = 0, askedAt = 0, locked = false;
 const results = [];
 
 /* ---------- discovery question banks, one per grade band ----------
-   Each band: 3 blocks × 5 questions, mixing patterns / English / maths and
-   ramping in difficulty. The child's grade picks the band, so the discovery
-   measures HOW they think without being too easy or impossibly hard. */
+   These measure HOW a child thinks — focus, pace, attention — NOT what they've
+   been taught. So they stay general knowledge and everyday reasoning: no
+   curriculum trivia, nothing a child could fail just because their class hasn't
+   covered it yet. Each band: 3 blocks × 5, mixing patterns / English / maths,
+   ramping gently. */
 const GRADE_BANDS = ['K–2', '3–5', '6–8', '9–12'];
 const BANKS = {
 
@@ -688,15 +690,15 @@ const BANKS = {
   ],
   [
     {domain:'maths', d:1, q:'12 − 5 = ?', options:['6','7','8','5'], answer:1, why:'Take 5 away from 12 to get 7.'},
-    {domain:'pattern', d:2, q:'Finish the pattern:   2, 4, 8, 16, ___', options:['20','24','32','18'], answer:2, why:'Each number doubles: 16 × 2 = 32.'},
+    {domain:'pattern', d:2, q:'What comes next?   2, 4, 8, 16, ___', options:['20','24','32','18'], answer:2, why:'Each number doubles: 16 × 2 = 32.'},
     {domain:'english', d:3, q:'Which one is a complete sentence?', options:['The dog.','Running fast.','The dog ran fast.','Fast the dog.'], answer:2, why:'It has a naming part and a doing part.'},
     {domain:'maths', d:4, q:'What is 6 × 7?', options:['42','36','48','40'], answer:0, why:'Six sevens make 42.'},
-    {domain:'pattern', d:5, q:'Which is the odd one out?   triangle, square, circle, cube', options:['triangle','square','circle','cube'], answer:3, why:'A cube is 3-D — the others are flat shapes.'},
+    {domain:'pattern', d:5, q:'Which is the odd one out?   3, 5, 7, 8, 11', options:['3','7','8','11'], answer:2, why:'8 is the only even number.'},
   ],
   [
     {domain:'english', d:1, q:'Choose the correct word:   “She ran ___ than her friend.”', options:['fast','faster','fastest','more fast'], answer:1, why:'Comparing two people uses “faster”.'},
     {domain:'maths', d:2, q:'What is half of 48?', options:['24','22','26','28'], answer:0, why:'48 split into two equal parts is 24.'},
-    {domain:'pattern', d:3, q:'What comes next?   1, 1, 2, 3, 5, ___', options:['6','7','8','9'], answer:2, why:'Add the two before it: 3 + 5 = 8.'},
+    {domain:'pattern', d:3, q:'Which is the odd one out?   triangle, square, circle, cube', options:['triangle','square','circle','cube'], answer:3, why:'A cube is 3-D — the others are flat shapes.'},
     {domain:'maths', d:4, q:'A pack has 6 pencils. How many pencils in 4 packs?', options:['20','24','18','28'], answer:1, why:'4 packs × 6 pencils = 24.'},
     {domain:'english', d:5, q:'Which sentence is punctuated correctly?', options:['wheres my book','Where’s my book?','Where’s my book','wheres my book?'], answer:1, why:'It needs the apostrophe in “Where’s” and a question mark.'},
   ],
@@ -705,50 +707,50 @@ const BANKS = {
 /* ================= 6–8 (roughly ages 11–14) ================= */
 '6–8': [
   [
-    {domain:'pattern', d:1, q:'What comes next?   3, 6, 12, 24, ___', options:['30','36','48','40'], answer:2, why:'Each number doubles: 24 × 2 = 48.'},
-    {domain:'english', d:2, q:'Which word is a synonym for “enormous”?', options:['tiny','huge','quick','quiet'], answer:1, why:'“Huge” means the same as enormous.'},
-    {domain:'maths', d:3, q:'What is 15% of 200?', options:['20','30','25','35'], answer:1, why:'10% is 20, 5% is 10 — together 30.'},
-    {domain:'pattern', d:4, q:'What comes next?   1, 4, 9, 16, ___', options:['20','24','25','21'], answer:2, why:'They are square numbers: 5 × 5 = 25.'},
+    {domain:'pattern', d:1, q:'What comes next?   10, 20, 30, 40, ___', options:['45','50','60','35'], answer:1, why:'It counts up by 10 each time.'},
+    {domain:'english', d:2, q:'Which word means the same as “enormous”?', options:['tiny','huge','quick','quiet'], answer:1, why:'“Huge” means the same as enormous.'},
+    {domain:'maths', d:3, q:'What is 10% of 50?', options:['5','10','15','2'], answer:0, why:'10% means one tenth — 50 ÷ 10 = 5.'},
+    {domain:'pattern', d:4, q:'What comes next?   2, 4, 8, 16, ___', options:['20','24','32','18'], answer:2, why:'Each number doubles: 16 × 2 = 32.'},
     {domain:'english', d:5, q:'Which is correct?', options:['Its raining','It’s raining','Its’ raining','Its raining’'], answer:1, why:'“It’s” is short for “it is”.'},
   ],
   [
-    {domain:'maths', d:1, q:'What is −5 + 8?', options:['3','−3','13','−13'], answer:0, why:'Moving 8 up from −5 lands on 3.'},
-    {domain:'pattern', d:2, q:'What comes next?   2, 3, 5, 8, 13, ___', options:['18','21','20','16'], answer:1, why:'Add the two before it: 8 + 13 = 21.'},
+    {domain:'maths', d:1, q:'What is 9 × 6?', options:['54','56','45','63'], answer:0, why:'Nine sixes make 54.'},
+    {domain:'pattern', d:2, q:'Which is the odd one out?   2, 4, 7, 8, 10', options:['2','4','7','10'], answer:2, why:'7 is the only odd number.'},
     {domain:'english', d:3, q:'What is the past tense of “bring”?', options:['bringed','brought','brang','broughted'], answer:1, why:'“Bring” becomes “brought”.'},
-    {domain:'maths', d:4, q:'Solve:   3x = 21.   What is x?', options:['6','7','8','9'], answer:1, why:'21 ÷ 3 = 7.'},
-    {domain:'pattern', d:5, q:'Odd one out:   2, 3, 5, 9, 11', options:['2','3','9','11'], answer:2, why:'9 is not prime — it is 3 × 3.'},
+    {domain:'maths', d:4, q:'A book costs £12. You pay with £20. How much change?', options:['£6','£8','£10','£12'], answer:1, why:'20 − 12 = 8.'},
+    {domain:'pattern', d:5, q:'What comes next?   1, 2, 4, 7, 11, ___', options:['14','15','16','18'], answer:2, why:'The gaps grow 1, 2, 3, 4, 5 — so 11 + 5 = 16.'},
   ],
   [
     {domain:'english', d:1, q:'Which sentence is a metaphor?', options:['He is as fast as a cheetah','He is a cheetah on the track','He runs very fast','He ran quickly away'], answer:1, why:'A metaphor says one thing IS another — no “like” or “as”.'},
     {domain:'maths', d:2, q:'What is the area of a rectangle 7 cm by 6 cm?', options:['42 cm²','13 cm²','26 cm²','36 cm²'], answer:0, why:'Area = length × width = 7 × 6 = 42.'},
-    {domain:'pattern', d:3, q:'What comes next?   100, 50, 25, 12.5, ___', options:['6','6.25','5','10'], answer:1, why:'Each number is halved: 12.5 ÷ 2 = 6.25.'},
+    {domain:'pattern', d:3, q:'What comes next?   3, 6, 12, 24, ___', options:['30','36','48','40'], answer:2, why:'Each number doubles: 24 × 2 = 48.'},
     {domain:'maths', d:4, q:'A shirt costs £40 with 25% off. What is the new price?', options:['£30','£35','£25','£32'], answer:0, why:'25% of 40 is 10, so 40 − 10 = £30.'},
-    {domain:'english', d:5, q:'Which sentence is in the passive voice?', options:['The cat chased the mouse','The mouse was chased by the cat','The cat is chasing','The mouse ran away'], answer:1, why:'The subject receives the action, so it is passive.'},
+    {domain:'english', d:5, q:'Which word is spelled correctly?', options:['recieve','receive','receeve','reciept'], answer:1, why:'It is “receive” — i before e except after c.'},
   ],
 ],
 
 /* ================= 9–12 (roughly ages 14–18) ================= */
 '9–12': [
   [
-    {domain:'pattern', d:1, q:'What comes next?   1, 8, 27, 64, ___', options:['100','125','81','96'], answer:1, why:'They are cubes: 5³ = 125.'},
+    {domain:'pattern', d:1, q:'What comes next?   2, 4, 8, 16, ___', options:['20','24','32','18'], answer:2, why:'Each number doubles: 16 × 2 = 32.'},
     {domain:'english', d:2, q:'What does “ubiquitous” mean?', options:['rare','found everywhere','ancient','very loud'], answer:1, why:'Ubiquitous means present everywhere.'},
-    {domain:'maths', d:3, q:'Solve:   2x + 5 = 17.   What is x?', options:['5','6','7','8'], answer:1, why:'17 − 5 = 12, and 12 ÷ 2 = 6.'},
-    {domain:'pattern', d:4, q:'What comes next?   2, 6, 12, 20, 30, ___', options:['40','42','36','44'], answer:1, why:'The gaps grow 4, 6, 8, 10, 12 — so 30 + 12 = 42.'},
+    {domain:'maths', d:3, q:'What is 20% of 150?', options:['30','20','25','15'], answer:0, why:'10% is 15, so 20% is 30.'},
+    {domain:'pattern', d:4, q:'What comes next?   1, 4, 9, 16, ___', options:['20','24','25','21'], answer:2, why:'They are square numbers: 5 × 5 = 25.'},
     {domain:'english', d:5, q:'Which device is used in “The wind whispered”?', options:['Simile','Personification','Hyperbole','Alliteration'], answer:1, why:'The wind is given a human action, so it is personification.'},
   ],
   [
-    {domain:'maths', d:1, q:'What is 2³ × 2²?', options:['32','16','64','8'], answer:0, why:'Add the powers: 2⁵ = 32.'},
-    {domain:'pattern', d:2, q:'What comes next?   1, 1, 2, 6, 24, ___', options:['48','120','96','60'], answer:1, why:'Each is multiplied by the next number: 24 × 5 = 120.'},
-    {domain:'english', d:3, q:'What does “juxtaposition” describe?', options:['repeating sounds','placing two things side by side to contrast them','a deliberate exaggeration','a rhetorical question'], answer:1, why:'Juxtaposition places contrasting things together.'},
-    {domain:'maths', d:4, q:'If f(x) = 3x² − 2, what is f(3)?', options:['25','23','27','7'], answer:0, why:'3 × 9 = 27, minus 2 = 25.'},
-    {domain:'pattern', d:5, q:'Odd one out:   4, 9, 16, 20, 25', options:['9','16','20','25'], answer:2, why:'20 is not a square number.'},
+    {domain:'maths', d:1, q:'What is 15% of 200?', options:['20','30','25','35'], answer:1, why:'10% is 20, 5% is 10 — together 30.'},
+    {domain:'pattern', d:2, q:'What comes next?   1, 1, 2, 3, 5, 8, ___', options:['11','12','13','14'], answer:2, why:'Add the two before it: 5 + 8 = 13.'},
+    {domain:'english', d:3, q:'Which word is the opposite of “generous”?', options:['kind','selfish','wealthy','cheerful'], answer:1, why:'Generous means giving; selfish is the opposite.'},
+    {domain:'maths', d:4, q:'Solve:   2x + 5 = 17.   What is x?', options:['5','6','7','8'], answer:1, why:'17 − 5 = 12, and 12 ÷ 2 = 6.'},
+    {domain:'pattern', d:5, q:'Which is the odd one out?   4, 9, 16, 20, 25', options:['9','16','20','25'], answer:2, why:'20 is not a square number.'},
   ],
   [
-    {domain:'english', d:1, q:'What is the tone of a text that mocks its subject?', options:['Satirical','Solemn','Nostalgic','Objective'], answer:0, why:'Mockery to criticise is satire.'},
-    {domain:'maths', d:2, q:'What is the gradient of the line   y = 4x − 7?', options:['−7','4','7','−4'], answer:1, why:'In y = mx + c the gradient m is 4.'},
-    {domain:'pattern', d:3, q:'What comes next?   3, 7, 15, 31, ___', options:['47','63','55','62'], answer:1, why:'Each is doubled then plus 1: 31 × 2 + 1 = 63.'},
+    {domain:'english', d:1, q:'Which word means “to make something less severe”?', options:['aggravate','alleviate','accelerate','allocate'], answer:1, why:'To alleviate is to ease or lessen something.'},
+    {domain:'maths', d:2, q:'A jacket costs £80 with 30% off. What is the new price?', options:['£56','£50','£60','£54'], answer:0, why:'30% of 80 is 24, so 80 − 24 = £56.'},
+    {domain:'pattern', d:3, q:'What comes next?   1, 3, 6, 10, 15, ___', options:['18','20','21','25'], answer:2, why:'The gaps grow 2, 3, 4, 5, 6 — so 15 + 6 = 21.'},
     {domain:'maths', d:4, q:'Two fair coins are flipped. What is the chance of two heads?', options:['1/2','1/4','1/3','3/4'], answer:1, why:'½ × ½ = ¼.'},
-    {domain:'english', d:5, q:'Which sentence has a dangling modifier?', options:['Walking home, the rain soaked me','Walking home, I got soaked','I walked home in the rain','The rain soaked me as I walked'], answer:0, why:'It reads as though the rain was walking home.'},
+    {domain:'english', d:5, q:'Which sentence is written correctly?', options:['They’re going to there house','Their going to their house','They’re going to their house','There going to they’re house'], answer:2, why:'“They’re” = they are, and “their” shows it belongs to them.'},
   ],
 ],
 };
