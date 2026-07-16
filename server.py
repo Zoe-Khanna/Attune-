@@ -238,7 +238,7 @@ def _sanitize(quiz: dict) -> dict:
     return {"topic": quiz.get("topic", "Practice"), "questions": clean}
 
 
-def generate(user_content, kind: str, n: int) -> dict:
+def generate(user_content, kind: str, n: int, verify: bool = True) -> dict:
     # More questions => more reasoning + output tokens. Scale the budget with n.
     budget = min(16000, 3000 + n * 350)
     model = pick_model(kind)
@@ -246,6 +246,9 @@ def generate(user_content, kind: str, n: int) -> dict:
     draft = _sanitize(_extract_quiz(raw))
     if not draft["questions"]:
         raise HTTPException(422, "Couldn't build questions from that. Try clearer material.")
+
+    if not verify:                         # skip the slow second pass (halves the wait)
+        return draft
 
     # second pass: re-solve everything and fix wrong answer keys
     try:
@@ -425,7 +428,9 @@ def quiz_from_text(body: TextIn):
         raise HTTPException(400, "Add a bit more text, or turn on 'look it up online'.")
     n = max(3, min(N_CAP, body.n))
     content = GENERATE_PROMPT.format(n=n) + "\n\nSTUDY MATERIAL:\n\n" + text
-    return generate(content, "text", n)
+    # Skip the slow verify pass for typed topics/books — the facts come from a
+    # trusted lookup, so a single fast pass keeps the wait short.
+    return generate(content, "text", n, verify=False)
 
 
 @app.post("/api/quiz/file")
@@ -473,14 +478,18 @@ async def quiz_from_image(files: List[UploadFile] = File(...), n: int = Form(20)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
+# Always serve the freshest HTML so a cached copy never runs stale app code.
+NO_CACHE = {"Cache-Control": "no-store, max-age=0"}
+
+
 @app.get("/")
 def index():
     # The discovery session is the front door — it profiles how the child
     # thinks before any lesson begins.
-    return FileResponse("static/discovery.html")
+    return FileResponse("static/discovery.html", headers=NO_CACHE)
 
 
 @app.get("/game")
 def game():
     # The textbook-photo runner game (build questions from a page, then play).
-    return FileResponse("static/index.html")
+    return FileResponse("static/index.html", headers=NO_CACHE)

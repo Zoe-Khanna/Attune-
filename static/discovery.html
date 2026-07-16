@@ -474,17 +474,22 @@ function saveCorrect(m){
 /* saved games (replayable) + a per-child difficulty that climbs each new game */
 function loadGames(){ try { return JSON.parse(localStorage.getItem(childKey+'_games')||'[]'); } catch(e){ return []; } }
 function saveGame(quiz){
-  const list = loadGames();
-  const sig = (quiz.topic||'') + '|' + ((quiz.questions[0]||{}).prompt||'') + '|' + quiz.questions.length;
-  if (list.some(g => g.sig === sig)) return;                  // don't store the same game twice
-  list.unshift({sig, topic:quiz.topic, questions:quiz.questions,
-                difficulty:quiz.difficulty||1, when:new Date().toISOString()});
-  if (list.length > 30) list.length = 30;
-  localStorage.setItem(childKey+'_games', JSON.stringify(list));
+  try {
+    const list = loadGames();
+    const sig = (quiz.topic||'') + '|' + ((quiz.questions[0]||{}).prompt||'') + '|' + quiz.questions.length;
+    if (list.some(g => g.sig === sig)) return;                // don't store the same game twice
+    list.unshift({sig, topic:quiz.topic, questions:quiz.questions,
+                  difficulty:quiz.difficulty||1, when:new Date().toISOString()});
+    if (list.length > 30) list.length = 30;
+    localStorage.setItem(childKey+'_games', JSON.stringify(list));
+  } catch(e){                                                 // storage full? drop oldest and retry once
+    try { const l = loadGames().slice(0,10); localStorage.setItem(childKey+'_games', JSON.stringify(l)); } catch(_){}
+  }
 }
 function bumpDifficulty(){
-  const d = Math.max(1, +(localStorage.getItem(childKey+'_difficulty')||1));
-  localStorage.setItem(childKey+'_difficulty', d+1);         // next generated game is harder
+  let d = 1;
+  try { d = Math.max(1, +(localStorage.getItem(childKey+'_difficulty')||1));
+        localStorage.setItem(childKey+'_difficulty', d+1); } catch(e){}
   return d;
 }
 
@@ -590,7 +595,11 @@ function refreshReturning(){
 $('name').addEventListener('keydown', e => { if (e.key === 'Enter') $('startBtn').click(); });
 $('startBtn').onclick = () => {
   const n = $('name').value.trim();
-  childName = n ? n.charAt(0).toUpperCase() + n.slice(1) : 'your child';
+  if (!n){ $('name').focus(); $('name').style.borderColor = 'var(--bad)';
+    $('name').placeholder = 'Please type the child\'s name first'; return; }
+  $('name').style.borderColor = '';
+  // Always the same key for the same name, so a child's data is never orphaned.
+  childName = n.charAt(0).toUpperCase() + n.slice(1);
   childKey = keyOf(childName);
   $('introTitle').textContent = `Let's see how ${childName}'s brain works best`;
   $('introSub').textContent =
@@ -734,7 +743,16 @@ function finishDiscovery(){
       challenge:(prefResults.challenge||{}).value || null,
     }};
   registerChild(childName);
-  try { localStorage.setItem(childKey+'_profile', JSON.stringify(profile)); } catch(e){}
+  try {
+    // A new session must NEVER lose the old profile — archive it first.
+    const prev = localStorage.getItem(childKey+'_profile');
+    if (prev){
+      let hist = []; try { hist = JSON.parse(localStorage.getItem(childKey+'_profiles')||'[]'); } catch(e){}
+      hist.unshift(JSON.parse(prev)); if (hist.length > 20) hist.length = 20;
+      localStorage.setItem(childKey+'_profiles', JSON.stringify(hist));
+    }
+    localStorage.setItem(childKey+'_profile', JSON.stringify(profile));
+  } catch(e){}
   renderProfile(profile);
 }
 
@@ -826,17 +844,16 @@ $('buildText').onclick = async () => {
   if (text.length < 2){ setStatus('textStatus','Type a topic, a book name, or some text.', true); return; }
   if (!research && text.length < 30){ setStatus('textStatus','Add a couple of sentences, or tick “look it up online”.', true); return; }
   $('buildText').disabled = true;
-  setStatus('textStatus', research
-    ? '🔎 Searching the web for the topic, then analysing it and writing new questions… this can take a minute or two.'
-    : 'Reading it, analysing the concepts and writing new questions… this can take a minute or two.');
+  const base = research ? '🔎 Looking it up online, then writing questions' : 'Analysing and writing questions';
+  const stop = startTimer('textStatus', base);
   try {
     const res = await fetch('/api/quiz/text', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({text, n:12, research})});
+      body: JSON.stringify({text, n:8, research})});
     if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail||'Request failed'); }
     const quiz = await res.json();
     if (!quiz.questions || !quiz.questions.length) throw new Error('No questions came back.');
-    chooseGame(quiz);
-  } catch(e){ offerDemo('textStatus', e.message); }
+    stop(); chooseGame(quiz);
+  } catch(e){ stop(); offerDemo('textStatus', e.message); }
   finally { $('buildText').disabled = false; }
 };
 
@@ -891,21 +908,28 @@ function renderThumbs(){
 $('buildPhoto').onclick = async () => {
   if (!photos.length){ setStatus('photoStatus','Add at least one photo or document first.', true); return; }
   $('buildPhoto').disabled = true;
-  setStatus('photoStatus', `Reading ${photos.length} file${photos.length>1?'s':''}, analysing the concepts and writing new questions… this can take a minute or two on the free model.`);
+  const stop = startTimer('photoStatus', `Reading ${photos.length} file${photos.length>1?'s':''} and writing questions`);
   try {
     const fd = new FormData();
     photos.forEach(p => fd.append('files', p));
-    fd.append('n','12');
+    fd.append('n','8');
     fd.append('research_flag', $('researchChkP').checked ? 'true' : 'false');
     const res = await fetch('/api/quiz/file', {method:'POST', body:fd});
     if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail||'Request failed'); }
     const quiz = await res.json();
     if (!quiz.questions || !quiz.questions.length) throw new Error('No questions came back.');
-    chooseGame(quiz);
-  } catch(e){ offerDemo('photoStatus', e.message); }
+    stop(); chooseGame(quiz);
+  } catch(e){ stop(); offerDemo('photoStatus', e.message); }
   finally { $('buildPhoto').disabled = false; }
 };
 function setStatus(id, msg, err){ const s = $(id); s.textContent = msg; s.className = 'status' + (err?' err':''); }
+/* live elapsed-time status so long generations clearly look like they're working */
+function startTimer(id, base){
+  let s = 0;
+  const tick = () => setStatus(id, `${base}… ${s}s  ·  usually 30–90s on the free model`);
+  tick(); const iv = setInterval(() => { s++; tick(); }, 1000);
+  return () => clearInterval(iv);
+}
 function offerDemo(statusId, msg){
   const s = $(statusId);
   s.className = 'status err';
@@ -951,10 +975,12 @@ function stopGame(){ if (rafId) cancelAnimationFrame(rafId); rafId = 0; if (g){ 
 let gameDifficulty = 1;
 function chooseGame(quiz){
   GAME = quiz;
-  if (quiz.difficulty == null){                 // a freshly generated game — assign & save it
-    quiz.difficulty = bumpDifficulty();
-    saveGame(quiz);
-  }
+  try {
+    if (quiz.difficulty == null){               // a freshly generated game — assign & save it
+      quiz.difficulty = bumpDifficulty();
+      saveGame(quiz);
+    }
+  } catch(e){ if (quiz.difficulty == null) quiz.difficulty = 1; }   // never block the game
   gameDifficulty = quiz.difficulty || 1;
   const nq = quiz.questions.length;
   $('chooseLead').textContent = `${nq} question${nq>1?'s':''} on “${quiz.topic||'your material'}” · ` +
