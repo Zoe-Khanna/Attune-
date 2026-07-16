@@ -33,6 +33,16 @@
   .hint{color:var(--muted);font-size:15px;line-height:1.5;margin:14px 0 0;}
   .rsw{display:flex;align-items:flex-start;gap:10px;margin-top:14px;font-weight:600;font-size:15px;cursor:pointer;}
   .rsw input{width:18px;height:18px;margin-top:1px;accent-color:var(--teal);cursor:pointer;flex-shrink:0;}
+  /* "just a topic?" follow-up: grade + how far to go */
+  #topicScope{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);}
+  .scope-intro{margin:0 0 6px;font-size:15px;font-weight:600;color:var(--teal-dk);}
+  .scope-q{margin-top:14px;}
+  .scope-q > label{font-weight:700;font-size:15px;margin:0;}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:9px;}
+  .chip-btn{padding:9px 14px;border:1px solid var(--line);border-radius:99px;background:#fff;
+    font-family:inherit;font-weight:600;font-size:14px;cursor:pointer;color:var(--ink);transition:.12s;}
+  .chip-btn:hover{border-color:var(--teal);background:var(--teal-soft);}
+  .chip-btn.on{background:var(--teal);color:#fff;border-color:var(--teal);}
 
   .btn{border:none;cursor:pointer;font-family:inherit;font-weight:700;font-size:17px;
     padding:16px 22px;border-radius:14px;background:var(--teal);color:#fff;width:100%;transition:background .15s;}
@@ -332,6 +342,20 @@
       <textarea id="matText" placeholder="e.g. “To Kill a Mockingbird”, “the water cycle”, or paste your notes…"></textarea>
       <label class="rsw"><input type="checkbox" id="researchChk" checked>
         <span>🔎 Look the topic up online first &nbsp;<span class="muted" style="font-weight:400">— finds facts for you, even from just a name</span></span></label>
+
+      <!-- Only shown when they typed a bare topic (not full material) -->
+      <div id="topicScope" class="hide">
+        <p class="scope-intro">That's just a topic — two quick things so we pitch it right:</p>
+        <div class="scope-q">
+          <label>1 · What grade/year are you in?</label>
+          <div class="chips" id="gradeChips"></div>
+        </div>
+        <div class="scope-q">
+          <label>2 · How far should we take it?</label>
+          <div class="chips" id="depthChips"></div>
+        </div>
+      </div>
+
       <button class="btn" id="buildText" style="margin-top:16px">Build my game</button>
       <div class="status" id="textStatus"></div>
     </div>
@@ -917,7 +941,7 @@ $('optDiscovery').onclick = () => { resetDiscovery();
   $('introTitle').textContent = `Let's see how ${childName}'s brain works best`;
   $('introSub').textContent = `A few quick games and a few questions about you. No grades, no pressure. About 5 minutes.`;
   show('screen-intro'); };
-$('optText').onclick = () => { $('textStatus').textContent=''; show('screen-text'); };
+$('optText').onclick = () => { $('textStatus').textContent=''; resetScope(); show('screen-text'); };
 $('optPhoto').onclick = () => { $('photoStatus').textContent=''; show('screen-photo'); };
 $('optReview').onclick = () => renderReview();
 
@@ -934,17 +958,62 @@ const DEMO_QUIZ = {topic:'Demo · Our Solar System', questions:[
 ]};
 
 /* ---------- text → game ---------- */
+/* ---------- "just a topic?" → ask grade + how far to go ---------- */
+const GRADES = ['Grade K–2','Grade 3–4','Grade 5–6','Grade 7–8','Grade 9–10','Grade 11–12'];
+const DEPTHS = [
+  {label:'Just the basics', value:'basics'},
+  {label:'Standard',        value:'standard'},
+  {label:'In depth',        value:'deep'},
+  {label:'Everything',      value:'everything'},
+];
+let scopeGrade = null, scopeDepth = null;
+// A bare topic/book title = a few words. A pasted lesson is much longer.
+function looksLikeTopic(t){ return t.length <= 120 && t.split(/\s+/).filter(Boolean).length <= 12; }
+function buildChips(box, items, get, set){
+  box.innerHTML = '';
+  items.forEach(it => {
+    const val = it.value || it, lab = it.label || it;
+    const b = document.createElement('button');
+    b.className = 'chip-btn' + (get() === val ? ' on' : '');
+    b.textContent = lab;
+    b.onclick = () => { set(val); [...box.children].forEach(c => c.classList.remove('on')); b.classList.add('on');
+      setStatus('textStatus',''); };
+    box.appendChild(b);
+  });
+}
+function showScopePanel(){
+  buildChips($('gradeChips'), GRADES, () => scopeGrade, v => scopeGrade = v);
+  buildChips($('depthChips'), DEPTHS, () => scopeDepth, v => scopeDepth = v);
+  $('topicScope').classList.remove('hide');
+}
+function resetScope(){ scopeGrade = null; scopeDepth = null; $('topicScope').classList.add('hide'); }
+// If they paste real material, the scope questions don't apply — hide them again.
+$('matText').addEventListener('input', () => {
+  if (!looksLikeTopic($('matText').value.trim())) $('topicScope').classList.add('hide');
+});
+
 $('buildText').onclick = async () => {
   const text = $('matText').value.trim();
   const research = $('researchChk').checked;
   if (text.length < 2){ setStatus('textStatus','Type a topic, a book name, or some text.', true); return; }
   if (!research && text.length < 30){ setStatus('textStatus','Add a couple of sentences, or tick “look it up online”.', true); return; }
+
+  // They gave a bare topic — ask how far to take it and what grade, first.
+  if (looksLikeTopic(text)){
+    if (!scopeGrade || !scopeDepth){
+      showScopePanel();
+      setStatus('textStatus', !scopeGrade && !scopeDepth
+        ? 'Pick your grade and how far to go, then tap Build again.'
+        : (!scopeGrade ? 'Pick your grade, then tap Build again.' : 'Pick how far to go, then tap Build again.'), true);
+      return;
+    }
+  }
   $('buildText').disabled = true;
   const base = research ? '🔎 Looking it up online, then writing questions' : 'Analysing and writing questions';
   const stop = startTimer('textStatus', base);
   try {
     const res = await fetch('/api/quiz/text', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({text, n:8, research})});
+      body: JSON.stringify({text, n:8, research, grade:scopeGrade, depth:scopeDepth})});
     if (!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail||'Request failed'); }
     const quiz = await res.json();
     if (!quiz.questions || !quiz.questions.length) throw new Error('No questions came back.');

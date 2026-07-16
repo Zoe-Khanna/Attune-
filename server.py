@@ -133,23 +133,51 @@ def _rank(m: str) -> int:
     return s
 
 
-def pick_model(kind: str) -> str:
-    if _picked[kind]:
-        return _picked[kind]
+def model_pool(kind: str) -> List[str]:
+    """Every free model we could use for this kind, best first."""
     if not _free_vision and not _free_text:
         discover_models()
     pool = _free_vision if kind == "vision" else (_free_text + _free_vision)
+    pool = sorted(pool, key=_rank)
+    # keep the last known-good model at the front
+    if _picked[kind] and _picked[kind] in pool:
+        pool.remove(_picked[kind]); pool.insert(0, _picked[kind])
+    return pool
+
+
+def pick_model(kind: str) -> str:
+    if _picked[kind]:
+        return _picked[kind]
+    pool = model_pool(kind)
     if not pool:
         raise HTTPException(503, "No free models available from OpenRouter right now.")
-    for m in sorted(pool, key=_rank)[:6]:
+    return pool[0]
+
+
+def chat_any(messages, kind: str, temperature: float, max_tokens: int) -> str:
+    """Free models get rate-limited constantly. Try them in turn instead of failing:
+    one 429 must never take the whole app down."""
+    pool = model_pool(kind)
+    if not pool:
+        raise HTTPException(503, "No free models available from OpenRouter right now.")
+    last = None
+    for m in pool[:6]:
         try:
-            _chat([{"role": "user", "content": "ping"}], m, 0.0, max_tokens=5, tries=1)
-            _picked[kind] = m
-            print(f"using {kind} model: {m}")
-            return m
-        except Exception:
+            out = _chat(messages, m, temperature, max_tokens=max_tokens, tries=1)
+            if _picked[kind] != m:
+                print(f"using {kind} model: {m}")
+                _picked[kind] = m                 # remember what worked
+            return out
+        except Exception as e:
+            last = e
+            msg = str(e)
+            print(f"model {m} failed ({msg[:90]}) — trying the next one")
+            if _picked[kind] == m:
+                _picked[kind] = None              # stop preferring a dead model
             continue
-    raise HTTPException(503, f"No usable free {kind} model right now.")
+    raise HTTPException(503,
+        "Every free AI model is busy right now (they rate-limit often). "
+        "Please try again in a minute — your work is saved.")
 
 
 # ---------------------------------------------------------------- AI call
@@ -241,8 +269,7 @@ def _sanitize(quiz: dict) -> dict:
 def generate(user_content, kind: str, n: int, verify: bool = True) -> dict:
     # More questions => more reasoning + output tokens. Scale the budget with n.
     budget = min(16000, 3000 + n * 350)
-    model = pick_model(kind)
-    raw = _chat([{"role": "user", "content": user_content}], model, 0.7, max_tokens=budget)
+    raw = chat_any([{"role": "user", "content": user_content}], kind, 0.7, budget)
     draft = _sanitize(_extract_quiz(raw))
     if not draft["questions"]:
         raise HTTPException(422, "Couldn't build questions from that. Try clearer material.")
@@ -252,10 +279,9 @@ def generate(user_content, kind: str, n: int, verify: bool = True) -> dict:
 
     # second pass: re-solve everything and fix wrong answer keys
     try:
-        tmodel = pick_model("text")
-        raw2 = _chat([{"role": "user",
-                       "content": VERIFY_PROMPT + json.dumps(draft, ensure_ascii=False)}],
-                     tmodel, 0.0, max_tokens=budget)
+        raw2 = chat_any([{"role": "user",
+                          "content": VERIFY_PROMPT + json.dumps(draft, ensure_ascii=False)}],
+                        "text", 0.0, budget)
         verified = _sanitize(_extract_quiz(raw2))
         if len(verified["questions"]) >= max(3, len(draft["questions"]) // 2):
             return verified
@@ -336,12 +362,11 @@ def _get_json(url, timeout=15):
 def _search_query(text: str) -> str:
     """Ask a fast model for a concise web-search query naming the real topic."""
     try:
-        model = pick_model("text")
-        q = _chat([{"role": "user", "content":
+        q = chat_any([{"role": "user", "content":
             "From the study material below, output ONLY a concise web-search query naming the main "
             "topic. If it is a book, work, person or event, give the exact title/name (add the author "
             "if it is a book). No quotes, no explanation, max 8 words.\n\nMATERIAL:\n" + text[:1200]}],
-            model, 0.0, max_tokens=40)
+            "text", 0.0, 40)
         q = (q or "").strip().splitlines()[0].strip().strip('"').strip()
         return q[:120] or text[:80]
     except Exception as e:
@@ -402,11 +427,23 @@ def research(text: str):
     return enriched, query, True
 
 
+# ------------------------------------------------- how far to take a bare topic
+# (label for the prompt, how many questions that depth deserves)
+DEPTH_SPEC = {
+    "basics":     ("only the core, must-know basics — keep it simple and short", 6),
+    "standard":   ("to the normal depth expected at that level", 9),
+    "deep":       ("thoroughly, including the harder sub-topics and the less obvious details", 13),
+    "everything": ("as fully as the topic allows — broad AND deep, including advanced sub-topics", 18),
+}
+
+
 # ---------------------------------------------------------------- API
 class TextIn(BaseModel):
     text: str
     n: int = 20
     research: bool = True
+    grade: Optional[str] = None      # e.g. "Grade 5-6" — only asked for a bare topic
+    depth: Optional[str] = None      # one of DEPTH_SPEC
 
 
 @app.get("/api/health")
@@ -426,8 +463,21 @@ def quiz_from_text(body: TextIn):
         text, _topic, _found = research(text)
     elif len(text) < 30:
         raise HTTPException(400, "Add a bit more text, or turn on 'look it up online'.")
-    n = max(3, min(N_CAP, body.n))
-    content = GENERATE_PROMPT.format(n=n) + "\n\nSTUDY MATERIAL:\n\n" + text
+    # If the student only gave a topic name, they also told us their grade and how
+    # far to take it — pitch the questions to that.
+    n, scope = body.n, ""
+    lines = []
+    if body.grade:
+        lines.append(f"The student is in {body.grade}. Pitch the vocabulary, reading level "
+                     f"and difficulty for that grade — not higher, not lower.")
+    if body.depth in DEPTH_SPEC:
+        spec, dn = DEPTH_SPEC[body.depth]
+        lines.append(f"Cover the topic {spec}.")
+        n = dn
+    if lines:
+        scope = "\n\nAUDIENCE AND SCOPE (follow this closely):\n- " + "\n- ".join(lines)
+    n = max(3, min(N_CAP, n))
+    content = GENERATE_PROMPT.format(n=n) + scope + "\n\nSTUDY MATERIAL:\n\n" + text
     # Skip the slow verify pass for typed topics/books — the facts come from a
     # trusted lookup, so a single fast pass keeps the wait short.
     return generate(content, "text", n, verify=False)
